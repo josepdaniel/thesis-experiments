@@ -179,9 +179,11 @@ def main():
 
 		plt.show()
 
-	# print(out)	
-			# x = prediction[:, 3].cpu().numpy()
-			# xs[i:i+6, i] = x.transpose().squeeze()
+	predicted = predicted.cpu().numpy()
+	actual = actual.cpu().numpy()
+	np.save("thegang3-actual.npy", actual)
+	np.save("thegang3-predicted.npy", predicted)
+	
 
 if __name__ == "__main__":
 	main()
