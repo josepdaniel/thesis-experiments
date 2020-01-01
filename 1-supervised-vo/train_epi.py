@@ -3,7 +3,6 @@ from torch.utils.data import DataLoader
 from torchvision.transforms import Compose
 import numpy as np
 import os
-import time
 from model import OdometryNet
 from epi.loader import EpiDataset, EpiDatasetOptions
 from epi.loader import Resize, Normalize, SelectiveStack, MakeTensor
@@ -22,6 +21,9 @@ pretrained_flownet_path = "./pretrained/flownets_EPE1.951.pth.tar"
 
 resume = True
 resume_checkpoint = "/home/joseph/Documents/thesis/1-supervised-vo/models/epi-vo-supervised.pth"
+
+train_path = "/home/joseph/Documents/epidata/smooth/train"
+valid_path = "/home/joseph/Documents/epidata/smooth/valid"
 
 ds_options = EpiDatasetOptions()
 ds_options.debug = False
@@ -58,11 +60,11 @@ transforms = Compose([
 	MakeTensor(ds_options)
 ])
 
-train_ds = EpiDataset("/home/joseph/Documents/epidata/smooth/train", transform=transforms, options=ds_options)
+train_ds = EpiDataset(train_path, transform=transforms, options=ds_options)
 train_dl = DataLoader(train_ds, batch_size=batch_size, pin_memory=True, shuffle=True)
 print("==> Created training dataloader with {} batches, {} samples".format(len(train_dl), len(train_ds)))
 
-valid_ds = EpiDataset("/home/joseph/Documents/epidata/smooth/valid", transform=transforms, options=ds_options)
+valid_ds = EpiDataset(valid_path, transform=transforms, options=ds_options)
 valid_dl = DataLoader(valid_ds, batch_size=4, pin_memory=True, shuffle=True)
 print("==> Created validation dataloader with {} batches, {} samples".format(len(valid_dl), len(valid_ds)))
 
