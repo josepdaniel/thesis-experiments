@@ -31,106 +31,7 @@ class EpiDatasetOptions():
         if type(self.step) is int:
             self.step = [self.step]
 
-        self.sequences_with_correction = {
-            "loriroo1-withpose": np.array([
-                [1,  0, 0],
-                [0,  0, 1],
-                [0, -1, 0],
-            ]),
-            "fruit1-withpose": np.array([
-                [1,  0, 0],
-                [0,  0, 1],
-                [0, -1, 0],
-            ]),
-            "santa1-mostly-straight": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "santa2-mostly-straight": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "christmastree1-mostly-straight": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "flamingo1-mostly-straight": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "lorikeet1-mostly-straight": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "ornaments-mostly-straight": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang1": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang2": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang3": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang4": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang5": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang6": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang7": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-            "thegang8": np.array([
-                [-1,   0, 0],
-                [ 0,  -1, 0],
-                [ 0,   0, 1],
-            ]),
-        }
-
-        self.sequence_means = {
-            "loriroo1-withpose":    23.63,
-            "birb1-withpose":       42.48,
-            "christmas1-withpose":  20.11,
-            "christmas2-withpose":  93.34,
-            "fruit1-withpose":      22.84,
-            "default":              31.00,
-        }
-
-        self.sequence_stds = {
-            "loriroo1-withpose":    20.13,
-            "birb1-withpose":       27.86,
-            "christmas1-withpose":  23.37,
-            "christmas2-withpose":  56.29,
-            "fruit1-withpose":      15.55,
-            "default":              34.00,
-        }
+        self.sequences_with_correction = sequences_with_correction
 
 
 class EpiDataset(Dataset):
@@ -303,6 +204,15 @@ class Resize:
         
         datapoint["images"] = np.array(output_images)
         return datapoint
+
+
+class EpipolarSlice:
+    def __init__(self, options):
+        self.options = options
+
+    def __call__(self, datapoint):
+        pass
+
 
 class SelectiveStack:
     def __init__(self, options):

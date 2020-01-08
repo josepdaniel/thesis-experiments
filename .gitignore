@@ -7,3 +7,6 @@ result/
 models/
 pretrained/
 *.ipynb
+*.pth
+**.vscode
+**/__pycache__

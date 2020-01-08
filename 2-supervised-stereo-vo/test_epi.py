@@ -120,12 +120,12 @@ def main():
 	torch.manual_seed(42)
 	torch.set_printoptions(precision=2)
 
-	use_pretrained_flownet = True
+	# use_pretrained_flownet = True
 
 	ds_options = EpiDatasetOptions()
 	ds_options.debug = False
 	ds_options.with_pose = True
-	ds_options.camera_array_indices = [8]
+	ds_options.camera_array_indices = [7, 8, 9]
 	ds_options.image_scale = 0.2
 	ds_options.backwards = False
 
@@ -138,10 +138,11 @@ def main():
 
 	img_width =  int(W * ds_options.image_scale)
 	img_height = int(H * ds_options.image_scale)
+	img_channels = len(ds_options.camera_array_indices) * 3
 
 	print("==> Loading weights")
-	model = OdometryNet(img_height, img_width, batchNorm=True)
-	model.load_state_dict(torch.load("epi.pth"))
+	model = OdometryNet(img_channels, img_height, img_width, batchNorm=True)
+	model.load_state_dict(torch.load("./models/epi.pth"))
 	model.to(device)
 	model.eval()
 
@@ -150,11 +151,11 @@ def main():
 		Resize(ds_options),
 		Normalize(ds_options),
 		SelectiveStack(ds_options),
-		RandomHorizontalFlip(ds_options),
+		# RandomHorizontalFlip(ds_options),
 		MakeTensor(ds_options)
 	])
 
-	train_ds = EpiDataset("/home/joseph/Documents/epidata/smooth/valid/", transform=transforms, options=ds_options, sequences=["thegang3"])
+	train_ds = EpiDataset("/home/joseph/Documents/epidata/smooth/train/", transform=transforms, options=ds_options, sequences=["thegang1"])
 	# train_dl = DataLoader(train_ds, batch_size=4, pin_memory=True, shuffle=False)
 
 	actual = torch.FloatTensor([[0, 0, 0, 0, 0, 0]])
@@ -200,8 +201,8 @@ def main():
 
 	predicted = predicted.cpu().numpy()
 	actual = actual.cpu().numpy()
-	np.save("thegang3-actual.npy", actual)
-	np.save("thegang3-predicted.npy", predicted)
+	np.save("thegang1-actual.npy", actual)
+	np.save("thegang1-predicted.npy", predicted)
 	
 
 if __name__ == "__main__":

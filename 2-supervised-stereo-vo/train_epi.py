@@ -20,7 +20,8 @@ use_pretrained_flownet = False
 pretrained_flownet_path = "./pretrained/flownets_EPE1.951.pth.tar"
 
 resume = True
-resume_checkpoint = "/home/joseph/Documents/thesis/1-supervised-monocular-vo/epi.pth"
+resume_checkpoint = "./models/epi.pth"
+model_savename = 	"./models/epi.pth"
 
 train_path = "/home/joseph/Documents/epidata/smooth/train"
 valid_path = "/home/joseph/Documents/epidata/smooth/valid"
@@ -28,12 +29,17 @@ valid_path = "/home/joseph/Documents/epidata/smooth/valid"
 ds_options = EpiDatasetOptions()
 ds_options.debug = False
 ds_options.with_pose = True
-ds_options.camera_array_indices = [8]
+ds_options.camera_array_indices = [7, 8, 9]
 ds_options.image_scale = 0.2
 
 epochs = 1000
 batch_size = 4
 plot_trajectory_every = 50
+
+img_width =  int(W * ds_options.image_scale)
+img_height = int(H * ds_options.image_scale)
+img_channels = len(ds_options.camera_array_indices) * 3			# Assuming RGB Images, change to *1 for grayscale
+
 # ---------------------------------------------------
 
 def play_sequence(t_x):
@@ -50,15 +56,15 @@ def play_sequence(t_x):
 		# t_x = t_x.cpu().numpy().transpose([1,2,0])
 		# print(t_x).shape
 
+# ---------------------------------------------------
 
-img_width =  int(W * ds_options.image_scale)
-img_height = int(H * ds_options.image_scale)
+
 
 transforms = Compose([
 	Resize(ds_options),
 	Normalize(ds_options),
 	SelectiveStack(ds_options),
-	RandomHorizontalFlip(ds_options),
+	# RandomHorizontalFlip(ds_options),
 	MakeTensor(ds_options)
 ])
 
@@ -72,7 +78,10 @@ print("==> Created validation dataloader with {} batches, {} samples".format(len
 
 
 # Model
-model = OdometryNet(img_height, img_width, batchNorm=True)
+model = OdometryNet(img_channels, img_height, img_width, batchNorm=True)
+
+print('==> Using {} channel images'.format(img_channels))
+
 use_cuda = torch.cuda.is_available()
 
 if use_cuda:
@@ -103,15 +112,21 @@ optimizer = torch.optim.SGD(model.parameters(), lr=0.001)
 
 # Train
 best_loss = 1e10
+validation_loss_history = []
+validation_translation_loss_history = []
+validation_rotation_loss_history = []
 
 for ep in range(epochs):
 	model.train()
-	loss_mean = 0
-	t_loss_list = []
-
 
 	# Training Step -----------------------------------------------------------------
 	for batch, datapoint in enumerate(train_dl):
+
+		# Plot Trajectory -----------------------------------------------------------------
+		if batch % plot_trajectory_every == 0:
+			print("==> Predicting trajectory")
+			model_test_trajectory(ds_options, model, savename="progress/"+str(str(ep)+"-"+str(batch)))
+
 		model.train()
 		t_x = datapoint["images"]
 		t_y = datapoint["poses"]
@@ -128,10 +143,7 @@ for ep in range(epochs):
 			ep, epochs, batch, len(train_dl), ls, angle_loss, translation_loss)
 		)
 
-		# Plot Trajectory -----------------------------------------------------------------
-		if batch % plot_trajectory_every == 0:
-			print("==> Predicting trajectory")
-			model_test_trajectory(ds_options, model, savename=str(str(ep)+"-"+str(batch)))
+		
 
  	# Validation -----------------------------------------------------------------
 	print("EVALUATING " + "-"*50)
@@ -149,7 +161,7 @@ for ep in range(epochs):
 			loss, angle_loss, translation_loss = model.get_loss(t_x_valid, t_y_valid)
 			
 			print("Epoch: 	{}/{}, Batch:   {}/{}, Loss    {:.3f}	(Angular: {:.3f}, Linear: {:.3f})".format(
-				epochs, ep, batch, len(valid_dl), loss, angle_loss, translation_loss)
+				ep, epochs, batch, len(valid_dl), loss, angle_loss, translation_loss)
 			)
 			eval_loss += loss
 			eval_angle_loss += angle_loss
@@ -165,8 +177,15 @@ for ep in range(epochs):
 		print("Loss    {:.3f}	(Angular: {:.3f}, Linear: {:.3f})".format(eval_loss, eval_angle_loss, eval_translation_loss) )
 
 		if eval_loss < best_loss: 
-			torch.save(model.state_dict(), "epi.pth")
+			torch.save(model.state_dict(), "models/epi.pth")
 			print("Saved model as \"epi.pth\"")
+
+
+		validation_loss_history.append(eval_loss)
+		fig = plt.figure()
+		ax = fig.add_subplot(111)
+		ax.plot(validation_loss_history)
+		plt.show()
 
 		print("-" * 61)
 
