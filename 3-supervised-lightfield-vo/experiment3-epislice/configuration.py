@@ -1,10 +1,18 @@
+import sys 
+sys.path.insert(0, "../")
+
 from torchvision.transforms import Compose
 from torch import cuda
 from epi.loader import EpiDatasetOptions
-from epi.loader import Resize, Normalize, SelectiveStack, MakeTensor, RandomHorizontalFlip
+from epi.loader import Resize, Normalize, SelectiveStack, MakeTensor, RandomHorizontalFlip, EpipolarSlice
 from epi.utils import RECTIFIED_IMAGE_SHAPE
 
 N, H, W, C = RECTIFIED_IMAGE_SHAPE
+
+def get_config():
+    return Options()
+
+
 
 
 class Options():
@@ -14,9 +22,9 @@ class Options():
         self.seed = 42
 
         # Training Options
-        self.resume = False
-        self.resume_checkpoint = "./models/epi.pth"
-        self.save_name = "./models/epi.pth"
+        self.resume = True
+        self.resume_checkpoint = "./models/epi-horizontal.pth"
+        self.save_name = "./models/epi-horizontal.pth"
         self.training_data = "/home/joseph/Documents/epidata/smooth/train"
         self.validation_data = "/home/joseph/Documents/epidata/smooth/valid"
 
@@ -32,18 +40,19 @@ class Options():
         self.ds_options = EpiDatasetOptions()
         self.ds_options.debug = False 
         self.ds_options.with_pose = True 
-        self.ds_options.camera_array_indices = [7, 8, 9]
+        self.ds_options.camera_array_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12]
         self.ds_options.image_scale = 0.2
         self.ds_options.grayscale = False
 
         # Dataloading augmentations
-        self.transforms = Compose([
+        self.preprocessing = Compose([
             Resize(self.ds_options),
             Normalize(self.ds_options),
             SelectiveStack(self.ds_options),
-            # RandomHorizontalFlip(ds_options),
-            MakeTensor(self.ds_options)
+            # EpipolarSlice(self.ds_options),
         ])
+
+        self.augmentation = None 
  
         
         # Don't change these

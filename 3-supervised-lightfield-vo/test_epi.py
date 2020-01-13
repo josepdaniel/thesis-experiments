@@ -1,7 +1,7 @@
 from utils import print_short_summary
 from configuration import Options
 from epi.loader import EpiDataset, EpiDatasetOptions
-from epi.loader import Resize, Normalize, SelectiveStack, MakeTensor, RandomHorizontalFlip
+from epi.loader import Resize, Normalize, SelectiveStack, MakeTensor, RandomHorizontalFlip, EpipolarSlice
 
 from torchvision.transforms import Compose
 from mpl_toolkits.mplot3d import Axes3D
@@ -37,8 +37,8 @@ def validate_model(model, valid_dl):
 
 
 
-def test_trajectory(ds_options, model, savename=None):
-	vis_ds_options = ds_options
+def test_trajectory(cfg, model, savename=None):
+	vis_ds_options = cfg.ds_options
 
 	with torch.no_grad():
 		device = "cuda" if torch.cuda.is_available else "cpu"
@@ -49,14 +49,8 @@ def test_trajectory(ds_options, model, savename=None):
 
 		vis_ds_options.backwards = False
 
-		transforms = Compose([
-			Resize(ds_options),
-			Normalize(ds_options),
-			SelectiveStack(ds_options),
-			MakeTensor(ds_options)
-		])
-
-		vis_ds = EpiDataset("/home/joseph/Documents/epidata/smooth/valid/", transform=transforms, options=vis_ds_options, sequences=["thegang3"])
+		preprocessing = cfg.preprocessing
+		vis_ds = EpiDataset("/home/joseph/Documents/epidata/smooth/valid/", preprocessing=preprocessing, augmentation=None, options=vis_ds_options, sequences=["thegang3"])
 
 		actual = torch.FloatTensor([[0, 0, 0, 0, 0, 0]])
 		predicted = torch.FloatTensor([[0, 0, 0, 0, 0, 0]])

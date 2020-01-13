@@ -8,6 +8,7 @@ from torchvision.transforms import Compose
 import dateutil.parser as dateparser
 from . import utils as epi_utils
 from .transforms import get_relative_6dof
+from .corrections import sequences_with_correction
 import cv2
 import random
 
@@ -39,13 +40,15 @@ class EpiDataset(Dataset):
     def __init__(
         self, datadir, 
         options=EpiDatasetOptions(),
-        sequences=None, 
-        transform=None,
+        sequences=None,
+        preprocessing=None, 
+        augmentation=None,
         ):
 
         self.datadir = datadir 
         self.sequences = sequences 
-        self.transform = transform 
+        self.augmentation = augmentation 
+        self.preprocessing = preprocessing
         self.options = options
 
         if self.options.with_intrinsics:
@@ -118,8 +121,13 @@ class EpiDataset(Dataset):
         if self.options.with_pose:
             data["poses"] = np.array(sequence_poses)
 
-        if self.transform:
-            data = self.transform(data)
+        if self.preprocessing:
+            data = self.preprocessing(data)
+        if self.augmentation:
+            data = self.augmentation(data)
+
+        make_tensor = MakeTensor(self.options)
+        data = make_tensor(data)
 
         return data
 
@@ -209,9 +217,30 @@ class Resize:
 class EpipolarSlice:
     def __init__(self, options):
         self.options = options
+        self.horizontal_imagers = [4, 5, 6, 7, 8, 9, 10, 11, 12]
+        self.vertical_imagers =   [0, 1, 2, 3, 8, 13, 14, 15, 16]
 
     def __call__(self, datapoint):
-        pass
+        
+        images = datapoint["images"]
+        images = images[:, self.horizontal_imagers, :, :, :]
+
+        S, N, H, W, C = images.shape
+        
+        output_image = None
+
+        for i in np.linspace(0, H-1, 20):
+            row = int(i)
+            epislice = images[:, :, row, :, :]
+
+            if output_image is None:
+                output_image = epislice
+            else:
+                output_image = np.concatenate((output_image, epislice), axis=1)
+
+        datapoint["images"] = output_image
+        
+        return datapoint
 
 
 class SelectiveStack:
