@@ -12,6 +12,9 @@ N, H, W, C = RECTIFIED_IMAGE_SHAPE
 def get_config():
     return Options()
 
+
+
+
 class Options():
     def __init__(self):
         
@@ -20,8 +23,8 @@ class Options():
 
         # Training Options
         self.resume = True
-        self.resume_checkpoint = "./models/epi-epislice.pth"
-        self.save_name = "./models/epi-epislice.pth"
+        self.resume_checkpoint = "./models/epi-horizontal.pth"
+        self.save_name = "./models/epi-horizontal.pth"
         self.training_data = "/home/joseph/Documents/epidata/smooth/train"
         self.validation_data = "/home/joseph/Documents/epidata/smooth/valid"
 
@@ -37,7 +40,7 @@ class Options():
         self.ds_options = EpiDatasetOptions()
         self.ds_options.debug = False 
         self.ds_options.with_pose = True 
-        self.ds_options.camera_array_indices = [8]
+        self.ds_options.camera_array_indices = [4, 5, 6, 7, 8, 9, 10, 11, 12]
         self.ds_options.image_scale = 0.2
         self.ds_options.grayscale = False
 
@@ -45,11 +48,13 @@ class Options():
         self.preprocessing = Compose([
             Resize(self.ds_options),
             Normalize(self.ds_options),
-            EpipolarSlice(self.ds_options),
+            SelectiveStack(self.ds_options),
+            # EpipolarSlice(self.ds_options),
         ])
 
         self.augmentation = None 
  
+        
         # Don't change these
         self.input_width =  int(W * self.ds_options.image_scale)
         self.input_height = int(H * self.ds_options.image_scale)
