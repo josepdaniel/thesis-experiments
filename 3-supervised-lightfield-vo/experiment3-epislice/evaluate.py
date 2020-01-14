@@ -1,7 +1,8 @@
 """"
 Script that generates predicted and actual trajectory files in ./results. This script needs to be run
-prior to using the evaluation.ipynb notebook. Do NOT change in between different experiments. 
+prior to using the evaluation.ipynb notebook. Do NOT change in between different experiments
 """
+
 
 import sys
 sys.path.insert(0, "../")
@@ -14,9 +15,13 @@ import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
 
+    if "--force-recalculate" in sys.argv:
+        recalculate = True 
+    else:
+        recalculate = False
+
     cfg = get_config()
-    # predict_trajectory_every_frame(cfg)
-    predicted = get_predicted_trajectory(force_recalculate=False)
+    predicted = get_predicted_trajectory(force_recalculate=recalculate)
     actual = get_actual_trajectory()
 
     predicted_xs, predicted_ys, predicted_zs = predicted[:, 0], predicted[:, 1], predicted[:, 2]
@@ -31,4 +36,3 @@ if __name__ == "__main__":
     ax.plot(predicted_xs*2, predicted_zs*1.5)
     ax.plot(actual_xs, actual_zs)
     plt.show()
-

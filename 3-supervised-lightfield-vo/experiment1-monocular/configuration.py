@@ -40,7 +40,7 @@ class Options():
         self.ds_options = EpiDatasetOptions()
         self.ds_options.debug = False 
         self.ds_options.with_pose = True 
-        self.ds_options.camera_array_indices = [8]
+        self.ds_options.camera_array_indices = [6]
         self.ds_options.image_scale = 0.2
         self.ds_options.grayscale = False
 

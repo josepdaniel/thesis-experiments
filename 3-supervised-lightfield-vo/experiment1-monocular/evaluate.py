@@ -15,9 +15,13 @@ import matplotlib.pyplot as plt
 
 if __name__ == "__main__":
 
+    if "--force-recalculate" in sys.argv:
+        recalculate = True 
+    else:
+        recalculate = False
+
     cfg = get_config()
-    # predict_trajectory_every_frame(cfg)
-    predicted = get_predicted_trajectory(force_recalculate=False)
+    predicted = get_predicted_trajectory(force_recalculate=recalculate)
     actual = get_actual_trajectory()
 
     predicted_xs, predicted_ys, predicted_zs = predicted[:, 0], predicted[:, 1], predicted[:, 2]
