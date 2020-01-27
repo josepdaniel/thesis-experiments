@@ -38,9 +38,9 @@ class OdometryNet(nn.Module):
         # Compute the output shape of the encoder
         __tmp = Variable(torch.zeros(1, imchannels*2, imsize1, imsize2))
         __tmp = self.encode_image(__tmp)
+        cnn_output_shape = __tmp.shape[1] * __tmp.shape[2] * __tmp.shape[3]
 
-        
-        self.linear = nn.Linear(in_features=1000, out_features=6)
+        self.linear = nn.Linear(in_features=cnn_output_shape, out_features=6)
 
         # Initilization
         for m in self.modules():
@@ -48,25 +48,6 @@ class OdometryNet(nn.Module):
                 kaiming_normal_(m.weight.data)
                 if m.bias is not None:
                     m.bias.data.zero_()
-            elif isinstance(m, nn.LSTM):
-                # layer 1
-                kaiming_normal_(m.weight_ih_l0)  #orthogonal_(m.weight_ih_l0)
-                kaiming_normal_(m.weight_hh_l0)
-                m.bias_ih_l0.data.zero_()
-                m.bias_hh_l0.data.zero_()
-                # Set forget gate bias to 1 (remember)
-                n = m.bias_hh_l0.size(0)
-                start, end = n//4, n//2
-                m.bias_hh_l0.data[start:end].fill_(1.)
-
-                # layer 2
-                kaiming_normal_(m.weight_ih_l1)  #orthogonal_(m.weight_ih_l1)
-                kaiming_normal_(m.weight_hh_l1)
-                m.bias_ih_l1.data.zero_()
-                m.bias_hh_l1.data.zero_()
-                n = m.bias_hh_l1.size(0)
-                start, end = n//4, n//2
-                m.bias_hh_l1.data[start:end].fill_(1.)
 
             elif isinstance(m, nn.BatchNorm2d):
                 m.weight.data.fill_(1)
@@ -79,16 +60,14 @@ class OdometryNet(nn.Module):
         x = torch.cat(( x[:, :-1], x[:, 1:]), dim=2)
         batch_size = x.size(0)
         seq_len = x.size(1)
+
         # CNN
         x = x.view(batch_size*seq_len, x.size(2), x.size(3), x.size(4))
         x = self.encode_image(x)
-        x = x.view(batch_size, seq_len, -1)
+        x = x.view(batch_size*seq_len, -1)
 
-
-        # RNN
-        out, hc = self.rnn(x)
-        out = self.rnn_drop_out(out)
-        out = self.linear(out)
+        # Linear layer
+        out = self.linear(x)
         return out
         
 
@@ -110,7 +89,9 @@ class OdometryNet(nn.Module):
         lambda_theta = 1
         lambda_t = 1
         predicted = self.forward(x)
+        predicted = predicted.reshape(y.shape)
         # y = y[:, 1:, :]  # (batch, seq, dim_pose)
+        
         # Weighted MSE Loss
         angle_loss = torch.nn.functional.mse_loss(predicted[:,:,:3], y[:,:,:3])
         translation_loss = torch.nn.functional.mse_loss(predicted[:,:,3:], y[:,:,3:])
@@ -121,7 +102,5 @@ class OdometryNet(nn.Module):
         optimizer.zero_grad()
         loss, angle_loss, translation_loss = self.get_loss(x, y)
         loss.backward()
-        if self.clip != None:
-            torch.nn.utils.clip_grad_norm(self.rnn.parameters(), self.clip)
         optimizer.step()
         return loss, angle_loss, translation_loss

@@ -48,7 +48,9 @@ def train(cfg):
 	# Train
 	best_loss = 1e10
 	validation_loss_history = []
+	epochs_without_improvement = 0
 
+	print("==> Beginning training")
 
 	for ep in range(ep_start, cfg.max_epochs):
 		model.train()
@@ -88,5 +90,15 @@ def train(cfg):
 			torch.save(snapshot, cfg.save_name)
 			print("Saved model as {}".format(cfg.save_name))
 			best_loss = loss
+			epochs_without_improvement = 0
+		else:
+			epochs_without_improvement += 1
+
+
+		if epochs_without_improvement > cfg.max_epochs_without_improvement:
+			print("Model trained continuously for {cfg.max_epochs_without_improvement} epochs without any improvement, exiting.")
+			return
+
+
 	
 

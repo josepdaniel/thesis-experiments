@@ -9,3 +9,4 @@ pretrained/
 *.pth
 **.vscode
 **/__pycache__
+*.tar
