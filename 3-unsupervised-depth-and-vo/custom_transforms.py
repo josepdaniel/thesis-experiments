@@ -37,7 +37,10 @@ class ArrayToTensor(object):
         tensors = []
         for im in images:
             # put it from HWC to CHW format
-            im = np.transpose(im, (2, 0, 1))
+            if(len(im.shape)) > 2:
+                im = np.transpose(im, (2, 0, 1))
+            else:
+                im = im.reshape([1, im.shape[0], im.shape[1]])
             # handle numpy array
             tensors.append(torch.from_numpy(im).float()/255)
         return tensors, intrinsics

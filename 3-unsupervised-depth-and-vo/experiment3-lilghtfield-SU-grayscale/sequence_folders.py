@@ -4,11 +4,23 @@ from imageio import imread
 from path import Path
 import random
 import cv2
+import torch
 
-def load_as_float(path):
+import matplotlib.pyplot as plt
+
+def load_as_float(path, gray):
     im = imread(path).astype(np.float32)
-    im = cv2.resize(im, (256, 192))
+    if gray:
+        im = cv2.cvtColor(im, cv2.COLOR_RGB2GRAY)
     return im
+
+def load_lightfield(path, cameras, gray):
+    imgs = []
+    for cam in cameras:
+        imgpath = path.replace('/8/', '/{}/'.format(cam))
+        imgs.append(load_as_float(imgpath, gray))
+
+    return imgs
 
 
 class SequenceFolder(data.Dataset):
@@ -23,9 +35,11 @@ class SequenceFolder(data.Dataset):
         transform functions must take in a list a images and a numpy array (usually intrinsics matrix)
     """
 
-    def __init__(self, root, seed=None, train=True, sequence_length=3, transform=None, target_transform=None, shuffle=True):
+    def __init__(self, root, cameras=[8], gray=False, seed=None, train=True, sequence_length=3, transform=None, target_transform=None, shuffle=True):
         np.random.seed(seed)
         random.seed(seed)
+        self.cameras = cameras
+        self.gray=gray
         self.root = Path(root)
         self.shuffle = shuffle
         scene_list_path = self.root/'train.txt' if train else self.root/'val.txt'
@@ -55,15 +69,28 @@ class SequenceFolder(data.Dataset):
 
     def __getitem__(self, index):
         sample = self.samples[index]
-        tgt_img = load_as_float(sample['tgt'])
-        ref_imgs = [load_as_float(ref_img) for ref_img in sample['ref_imgs']]
+        tgt_img = load_as_float(sample['tgt'], False)
+        ref_imgs = [load_as_float(ref_img, False) for ref_img in sample['ref_imgs']]
+
+        tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
+        ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
+        
         if self.transform is not None:
             imgs, intrinsics = self.transform([tgt_img] + ref_imgs, np.copy(sample['intrinsics']))
+
+            # Lazy reuse of existing function
+            tgt_lf, _ = self.transform(tgt_lf, np.zeros((3,3)))
+            ref_lfs = [self.transform(ref, np.zeros((3,3)))[0] for ref in ref_lfs]
+
             tgt_img = imgs[0]
             ref_imgs = imgs[1:]
         else:
             intrinsics = np.copy(sample['intrinsics'])
-        return tgt_img, ref_imgs, intrinsics, np.linalg.inv(intrinsics)
+        
+        tgt_lf = torch.cat(tgt_lf, 0)       # Concatenate lightfield on colour channel
+        ref_lfs = [torch.cat(ref, 0) for ref in ref_lfs]     
+
+        return tgt_img, tgt_lf, ref_imgs, ref_lfs, intrinsics, np.linalg.inv(intrinsics)
 
     def __len__(self):
         return len(self.samples)

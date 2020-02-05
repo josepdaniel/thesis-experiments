@@ -1,9 +1,12 @@
+import sys 
+sys.path.insert(0, "..")
+
+from sequence_folders import SequenceFolder
+
+
 import argparse
 import time
 import csv
-
-import sys 
-sys.path.insert(0, "../")
 
 import numpy as np
 import torch
@@ -11,9 +14,8 @@ import torch.backends.cudnn as cudnn
 import torch.optim
 import torch.utils.data
 import custom_transforms
-import models
+import lfmodels as models
 from utils import tensor2array, save_checkpoint, save_path_formatter, log_output_tensorboard
-from sequence_folders import SequenceFolder
 
 from loss_functions import photometric_reconstruction_loss, explainability_loss, smooth_loss, compute_errors
 from logger import TermLogger, AverageMeter
@@ -24,6 +26,9 @@ parser = argparse.ArgumentParser(description='Structure from Motion Learner trai
 
 parser.add_argument('data', metavar='DIR',
                     help='path to dataset')
+parser.add_argument('--dataset-format', default='sequential', metavar='STR',
+                    help='dataset format, stacked: stacked frames (from original TensorFlow code) \
+                    sequential: sequential folders (easier to convert to with a non KITTI/Cityscape dataset')
 parser.add_argument('--sequence-length', type=int, metavar='N', help='sequence length for training', default=3)
 parser.add_argument('--rotation-mode', type=str, choices=['euler', 'quat'], default='euler',
                     help='rotation mode for PoseExpnet : euler (yaw,pitch,roll) or quaternion (last 3 coefficients)')
@@ -68,6 +73,8 @@ parser.add_argument('-s', '--smooth-loss-weight', type=float, help='weight for d
 parser.add_argument('--log-output', action='store_true', help='will log dispnet outputs and warped imgs at validation step')
 parser.add_argument('-f', '--training-output-freq', type=int, help='frequence for outputting dispnet outputs and warped imgs at training for all scales if 0 will not output',
                     metavar='N', default=0)
+parser.add_argument('-c', '--cameras', nargs='+', type=int, help='which cameras to use', default=[8])
+parser.add_argument('--gray', action='store_true', help="images are grayscale")
 
 best_error = -1
 n_iter = 0
@@ -77,7 +84,7 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 def main():
     global best_error, n_iter, device
     args = parser.parse_args()
-
+    
     save_path = save_path_formatter(args, parser)
     args.save_path = 'checkpoints'/save_path
     print('=> will save everything to {}'.format(args.save_path))
@@ -91,8 +98,8 @@ def main():
     normalize = custom_transforms.Normalize(mean=[0.5, 0.5, 0.5],
                                             std=[0.5, 0.5, 0.5])
     train_transform = custom_transforms.Compose([
-        custom_transforms.RandomHorizontalFlip(),
-        custom_transforms.RandomScaleCrop(),
+        # custom_transforms.RandomHorizontalFlip(),
+        # custom_transforms.RandomScaleCrop(),
         custom_transforms.ArrayToTensor(),
         normalize
     ])
@@ -102,29 +109,28 @@ def main():
     print("=> fetching scenes in '{}'".format(args.data))
     train_set = SequenceFolder(
         args.data,
+        gray=args.gray,
+        cameras=args.cameras,
         transform=train_transform,
         seed=args.seed,
         train=True,
         sequence_length=args.sequence_length
     )
+    
+    # Pull first example from dataset to check number channels
+    input_channels = train_set[0][1].shape[0]   
+    
+    val_set = SequenceFolder(
+        args.data,
+        transform=valid_transform,
+        seed=args.seed,
+        train=False,
+        sequence_length=args.sequence_length,
+    )
 
-    # if no Groundtruth is avalaible, Validation set is the same type as training set to measure photometric loss from warping
-    if args.with_gt:
-        from datasets.validation_folders import ValidationSet
-        val_set = ValidationSet(
-            args.data,
-            transform=valid_transform
-        )
-    else:
-        val_set = SequenceFolder(
-            args.data,
-            transform=valid_transform,
-            seed=args.seed,
-            train=False,
-            sequence_length=args.sequence_length,
-        )
     print('{} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
     print('{} samples found in {} valid scenes'.format(len(val_set), len(val_set.scenes)))
+
     train_loader = torch.utils.data.DataLoader(
         train_set, batch_size=args.batch_size, shuffle=True,
         num_workers=args.workers, pin_memory=True)
@@ -132,17 +138,16 @@ def main():
         val_set, batch_size=args.batch_size, shuffle=False,
         num_workers=args.workers, pin_memory=True)
 
+
     if args.epoch_size == 0:
         args.epoch_size = len(train_loader)
 
     # create model
     print("=> creating model")
 
-    disp_net = models.DispNetS().to(device)
+    disp_net = models.LFDispNet(in_channels=input_channels).to(device)
     output_exp = args.mask_loss_weight > 0
-    if not output_exp:
-        print("=> no mask loss, PoseExpnet will only output pose")
-    pose_exp_net = models.PoseExpNet(nb_ref_imgs=args.sequence_length - 1, output_exp=args.mask_loss_weight > 0).to(device)
+    pose_exp_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1, output_exp=args.mask_loss_weight > 0).to(device)
 
     if args.pretrained_exp_pose:
         print("=> using pre-trained weights for explainabilty and pose net")
@@ -158,11 +163,13 @@ def main():
     else:
         disp_net.init_weights()
 
+
     cudnn.benchmark = True
     disp_net = torch.nn.DataParallel(disp_net)
     pose_exp_net = torch.nn.DataParallel(pose_exp_net)
 
     print('=> setting adam solver')
+
 
     optim_params = [
         {'params': disp_net.parameters(), 'lr': args.lr},
@@ -252,7 +259,7 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
     end = time.time()
     logger.train_bar.update(0)
 
-    for i, (tgt_img, ref_imgs, intrinsics, intrinsics_inv) in enumerate(train_loader):
+    for i, (tgt_img, tgt_lf, ref_imgs, ref_lfs, intrinsics, intrinsics_inv) in enumerate(train_loader):
         log_losses = i > 0 and n_iter % args.print_freq == 0
         log_output = args.training_output_freq > 0 and n_iter % args.training_output_freq == 0
 
@@ -260,12 +267,15 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
         data_time.update(time.time() - end)
         tgt_img = tgt_img.to(device)
         ref_imgs = [img.to(device) for img in ref_imgs]
+        tgt_lf = tgt_lf.to(device)
+        ref_lfs = [lf.to(device) for lf in ref_lfs]
         intrinsics = intrinsics.to(device)
 
         # compute output
-        disparities = disp_net(tgt_img)
+        disparities = disp_net(tgt_lf)
         depth = [1/disp for disp in disparities]
-        explainability_mask, pose = pose_exp_net(tgt_img, ref_imgs)
+
+        explainability_mask, pose = pose_exp_net(tgt_lf, ref_lfs)
 
         loss_1, warped, diff = photometric_reconstruction_loss(tgt_img, ref_imgs, intrinsics,
                                                                depth, explainability_mask, pose,
@@ -332,16 +342,18 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
 
     end = time.time()
     logger.valid_bar.update(0)
-    for i, (tgt_img, ref_imgs, intrinsics, intrinsics_inv) in enumerate(val_loader):
+    for i, (tgt_img, tgt_lf, ref_imgs, ref_lfs, intrinsics, intrinsics_inv) in enumerate(val_loader):
         tgt_img = tgt_img.to(device)
         ref_imgs = [img.to(device) for img in ref_imgs]
+        tgt_lf = tgt_lf.to(device)
+        ref_lfs = [lf.to(device) for lf in ref_lfs]
         intrinsics = intrinsics.to(device)
         intrinsics_inv = intrinsics_inv.to(device)
 
         # compute output
-        disp = disp_net(tgt_img)
+        disp = disp_net(tgt_lf)
         depth = 1/disp
-        explainability_mask, pose = pose_exp_net(tgt_img, ref_imgs)
+        explainability_mask, pose = pose_exp_net(tgt_lf, ref_lfs)
 
         loss_1, warped, diff = photometric_reconstruction_loss(tgt_img, ref_imgs,
                                                                intrinsics, depth,
