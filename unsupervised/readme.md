@@ -24,3 +24,19 @@ sh training-scripts/train-trinocular.sh
 ```
 sh training-scripts/train-horizontal.sh
 ```
+
+
+## Inference
+
+Inference requires a 'config.pkl' file that was generated during training. This file contains the training parameters such as which cameras were used, whether images are grayscale, etc.
+
+Inference generates both disparity maps and pose predictions.  Disparity maps are saved as pngs in the the same directory as the model weights, in a new directory with the same name as the sequence. Inside there will also be a 'poses.npy' pickling of a numpy array with columns [tx, ty, tz, rx, ry, rz]. 
+
+```
+python3 infer.py --config PATH/TO/config.pkl --seq SEQUENCE_NAME
+```
+
+
+## Evaluation
+
+Use evaluation.ipynb for evaluating.
