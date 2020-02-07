@@ -7,35 +7,32 @@ import datetime
 from collections import OrderedDict
 from matplotlib import cm
 from matplotlib.colors import ListedColormap, LinearSegmentedColormap
+import os
+import time
+import math
+import pickle
 
+def dump_config(save_path, args):
+    with open(os.path.join(save_path, "config.pkl"), 'wb') as pklfile:
+        pickle.dump(args, pklfile)
+    
+    args = vars(args)
+    dumpfile = open(os.path.join(save_path, "config.txt"), 'w')
+    for key in args.keys():
+        keystr = str(key).ljust(30, " ")
+        dumpfile.write("{} {}\n".format(keystr, args[key]))
+    
+def load_config(cfgfile):
+    with open(cfgfile, 'rb') as pklfile:
+        cfg = pickle.load(pklfile)
 
-def save_path_formatter(args, parser):
-    def is_default(key, value):
-        return value == parser.get_default(key)
-    args_dict = vars(args)
-    data_folder_name = str(Path(args_dict['data']).normpath().name)
-    folder_string = [data_folder_name]
-    if not is_default('epochs', args_dict['epochs']):
-        folder_string.append('{}epochs'.format(args_dict['epochs']))
-    keys_with_prefix = OrderedDict()
-    keys_with_prefix['epoch_size'] = 'epoch_size'
-    keys_with_prefix['sequence_length'] = 'seq'
-    keys_with_prefix['rotation_mode'] = 'rot_'
-    keys_with_prefix['padding_mode'] = 'padding_'
-    keys_with_prefix['batch_size'] = 'b'
-    keys_with_prefix['lr'] = 'lr'
-    keys_with_prefix['photo_loss_weight'] = 'p'
-    keys_with_prefix['mask_loss_weight'] = 'm'
-    keys_with_prefix['smooth_loss_weight'] = 's'
+    return cfg
 
-    for key, prefix in keys_with_prefix.items():
-        value = args_dict[key]
-        if not is_default(key, value):
-            folder_string.append('{}{}'.format(prefix, value))
-    save_path = Path(','.join(folder_string))
-    timestamp = datetime.datetime.now().strftime("%m-%d-%H:%M")
-    return save_path/timestamp
-
+def make_save_path(args):
+    save_path = os.path.join(args.save_path, args.name)
+    save_path = os.path.expanduser(save_path)
+    os.makedirs(save_path, exist_ok=False)
+    return Path(save_path)
 
 def high_res_colormap(low_res_cmap, resolution=1000, max_value=1):
     # Construct the list colormap, with interpolated values for higer resolution
@@ -99,11 +96,11 @@ def tensor2array(tensor, max_value=None, colormap='rainbow'):
 
 
 def save_checkpoint(save_path, dispnet_state, exp_pose_state, is_best, filename='checkpoint.pth.tar'):
-    file_prefixes = ['dispnet', 'exp_pose']
+    file_prefixes = ['dispnet', 'posenet']
     states = [dispnet_state, exp_pose_state]
     for (prefix, state) in zip(file_prefixes, states):
         torch.save(state, save_path/'{}_{}'.format(prefix,filename))
 
     if is_best:
         for prefix in file_prefixes:
-            shutil.copyfile(save_path/'{}_{}'.format(prefix,filename), save_path/'{}_model_best.pth.tar'.format(prefix))
+            shutil.copyfile(save_path/'{}_{}'.format(prefix,filename), save_path/'{}_best.pth.tar'.format(prefix))
