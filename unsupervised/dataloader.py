@@ -3,9 +3,11 @@ import numpy as np
 import random
 import cv2
 import torch
+import os
 
 from imageio import imread
 from path import Path
+from custom_transforms import get_relative_6dof
 
 import matplotlib.pyplot as plt
 
@@ -23,6 +25,17 @@ def load_lightfield(path, cameras, gray):
 
     return imgs
 
+
+def load_relative_pose(tgt, ref):
+    # Get the number in the filename - super hacky
+    sequence_name = os.path.join("/", *tgt.split("/")[:-2])
+    tgt = int(tgt.split("/")[-1].split(".")[-2])
+    ref = int(ref.split("/")[-1].split(".")[-2])
+    pose_file = np.load(os.path.join(sequence_name, "poses_gt_absolute.npy"))
+    tgt_pose = pose_file[tgt, :]
+    ref_pose = pose_file[ref, :]
+    rel_pose = get_relative_6dof(tgt_pose[:3], tgt_pose[3:], ref_pose[:3], ref_pose[3:], rotation_mode='euler')
+    return rel_pose
 
 class SequenceFolder(data.Dataset):
     """A sequence data loader where the files are arranged in this way:
@@ -91,6 +104,7 @@ class SequenceFolder(data.Dataset):
 
         tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
         ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
+        pose = torch.Tensor([load_relative_pose(sample['tgt'], ref) for ref in sample['ref_imgs']])
         
         if self.transform is not None:
             imgs, intrinsics = self.transform([tgt_img] + ref_imgs, np.copy(sample['intrinsics']))
@@ -107,7 +121,7 @@ class SequenceFolder(data.Dataset):
         tgt_lf = torch.cat(tgt_lf, 0)       # Concatenate lightfield on colour channel
         ref_lfs = [torch.cat(ref, 0) for ref in ref_lfs]     
 
-        return tgt_img, tgt_lf, ref_imgs, ref_lfs, intrinsics, np.linalg.inv(intrinsics)
+        return tgt_img, tgt_lf, ref_imgs, ref_lfs, intrinsics, np.linalg.inv(intrinsics), pose
 
     def __len__(self):
         return len(self.samples)

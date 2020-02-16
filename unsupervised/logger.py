@@ -86,4 +86,4 @@ class AverageMeter(object):
     def __repr__(self):
         val = ' '.join(['{:.{}f}'.format(v, self.precision) for v in self.val])
         avg = ' '.join(['{:.{}f}'.format(a, self.precision) for a in self.avg])
-        return '{} ({})'.format(val, avg)
+        return '{} (avg {})'.format(val, avg)
