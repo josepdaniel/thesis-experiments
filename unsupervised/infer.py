@@ -24,8 +24,15 @@ def main():
     config = load_config(args.config)
 
     output_dir = os.path.join(config.save_path, "results", args.seq)
-    config.posenet = os.path.join(config.save_path, "posenet_best.pth.tar")
-    config.dispnet = os.path.join(config.save_path, "dispnet_best.pth.tar")
+
+    if args.use_latest_not_best:
+        config.posenet = os.path.join(config.save_path, "posenet_checkpoint.pth.tar")
+        config.dispnet = os.path.join(config.save_path, "dispnet_checkpoint.pth.tar")
+        output_dir = output_dir + "-latest"
+    else:
+        config.posenet = os.path.join(config.save_path, "posenet_best.pth.tar")
+        config.dispnet = os.path.join(config.save_path, "dispnet_best.pth.tar")
+
 
     os.makedirs(output_dir)
 
@@ -52,7 +59,7 @@ def main():
     disp_net.load_state_dict(weights['state_dict'])
     disp_net.eval()
 
-    pose_net = PoseNet(in_channels=9, nb_ref_imgs=2, output_exp=False).to(device)
+    pose_net = PoseNet(in_channels=input_channels, nb_ref_imgs=2, output_exp=False).to(device)
     weights = torch.load(config.posenet)
     pose_net.load_state_dict(weights['state_dict'])
     pose_net.eval()
