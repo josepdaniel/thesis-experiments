@@ -145,6 +145,15 @@ def main():
         logger.reset_valid_bar()
         valid_loss = validate(args, val_loader, pose_exp_net, logger, tb_writer)
 
+        if valid_loss < best_error or best_error < 0:
+            best_error = valid_loss
+            checkpoint = {
+                "epoch": epoch + 1,
+                "state_dict": pose_exp_net.module.state_dict()
+            }
+            torch.save(checkpoint, save_path/'posenet_best.pth.tar')
+        torch.save(checkpoint, save_path/'posenet_checkpoint.pth.tar')
+
     logger.epoch_bar.finish()
 
 

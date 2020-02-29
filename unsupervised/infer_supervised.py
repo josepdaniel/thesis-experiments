@@ -6,7 +6,6 @@ import matplotlib.pyplot as plt
 import numpy as np
 from dataloader import SequenceFolder
 from tqdm import tqdm
-from lfmodels import LFDispNet as DispNetS
 from lfmodels import LFPoseNet as PoseNet
 from utils import load_config
 
@@ -27,12 +26,9 @@ def main():
 
     if args.use_latest_not_best:
         config.posenet = os.path.join(config.save_path, "posenet_checkpoint.pth.tar")
-        config.dispnet = os.path.join(config.save_path, "dispnet_checkpoint.pth.tar")
         output_dir = output_dir + "-latest"
     else:
         config.posenet = os.path.join(config.save_path, "posenet_best.pth.tar")
-        config.dispnet = os.path.join(config.save_path, "dispnet_best.pth.tar")
-
 
     os.makedirs(output_dir)
 
@@ -52,12 +48,7 @@ def main():
         sequence=args.seq,
     )
 
-    input_channels = dataset[0][1].shape[0]   
-
-    disp_net = DispNetS(in_channels=input_channels).to(device)
-    weights = torch.load(config.dispnet)
-    disp_net.load_state_dict(weights['state_dict'])
-    disp_net.eval()
+    input_channels = dataset[0][1].shape[0]
 
     pose_net = PoseNet(in_channels=input_channels, nb_ref_imgs=2, output_exp=False).to(device)
     weights = torch.load(config.posenet)
@@ -70,11 +61,7 @@ def main():
         ref = [r.unsqueeze(0).to(device) for r in ref]
         tgt_lf = tgt_lf.unsqueeze(0).to(device)
         ref_lf = [r.unsqueeze(0).to(device) for r in ref_lf]
-        output = disp_net(tgt_lf)
         exp, pose = pose_net(tgt_lf, ref_lf)
-        
-        outdir = os.path.join(output_dir, "{:06d}.png".format(i))
-        plt.imsave(outdir, output.cpu().numpy()[0,0,:,:])
         poses.append(pose[0,1,:].cpu().numpy())
 
 

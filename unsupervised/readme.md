@@ -1,5 +1,59 @@
 # Unsupervised learning of depth and visual odometry from light fields
 
+![The camera](./epimodule.jpg)
+
+This thesis project proposes a data-driven, unsupervised framework for performing visual odometry, using multi-view imaging devices. In these experiments, a camera with 17 sub-apertures arranged in a cross-hair formation was used. The cameras are indexed as shown:
+
+```
+            0
+            1
+            2
+            3
+4  5  6  7  8  9  10 11 12 
+            13
+            14
+            15
+            16
+```
+
+While the device in this case is equipped with 17 imagers, the proposed framework works with any number of cameras, including monocular imagery. The scripts used for training in this thesis project are provided in ```training_scripts```, and includes scripts for training on monocular and trinocular imagery, all imagers in the *SU* plane (horizontal) and the complete *SUTV* plane (the full light field).
+
+The approach uses two CNN's:
+
+- *LFPoseNet*: A network that accepts two frames of a lightfield video, separated by a small amount of time and space, and aims to predict the 6 degree-of-freedom ego-motion between them.
+- *LFDispNet*: A network that accepts a single light field image, and aims to produce a disparity map corresponding to the center view.
+
+These models are defined in ```lfmodels```.
+
+## Preparing Training Data
+The directory containing the dataset needs to be organised as following:
+
+```
+├── root
+│    ├── seq1                              
+│    │    ├── 0                             
+│    │    │    ├── 000000.png                
+│    │    │    ├── 000001.png            
+│    │    │    ├── ...
+│    │    │    └── 000372.png
+│    │    ├── 1         
+│    │    │    ├──000000.png
+│    │    │    ├──000001.png
+│    │    │    ├── ...
+│    │    │    └── 000372.png
+│    │    ├── ...
+│    │    ├── 16
+│    │    ├── poses_gt_absolute.npy         
+│    │    └── poses_gt_relative.npy         
+│    └── seqN
+├── train.txt
+└── val.txt
+```
+
+- ```poses_gt_absolute.npy```: serialised numpy array with ground truth pose data (in absolute pose, i.e. relative to origin)
+-  ```poses_gt_relative.npy```: same, with relative poses, relative to the previous frame.
+- ```train.txt```: names of sequences to train on, each on new line
+- ```val.txt```: validation sequences
 ## Training
 
 When a training script is run, outputs are generated in ```~/Documents/checkpoints/EXPERIMENT_NAME```. The outputs are: 
