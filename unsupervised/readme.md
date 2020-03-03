@@ -1,6 +1,6 @@
 # Unsupervised learning of depth and visual odometry from light fields
 
-![The camera](./epimodule.jpg)
+<img src="epimodule.jpg" alt="The camera" width="400"/>
 
 This thesis project proposes a data-driven, unsupervised framework for performing visual odometry, using multi-view imaging devices. In these experiments, a camera with 17 sub-apertures arranged in a cross-hair formation was used. The cameras are indexed as shown:
 
@@ -79,6 +79,53 @@ sh training-scripts/train-trinocular.sh
 sh training-scripts/train-horizontal.sh
 ```
 
+#### Training Arguments
+```
+usage: train.py [-h] [--save-path PATH] [--sequence-length N]
+                [--rotation-mode] [--padding-mode]
+                [-j] [--epochs] [-b] [--lr] [--momentum] [--beta]
+                [--weight-decay] [--print-freq] [--pretrained-disp]
+                [--pretrained-exppose] [--seed] [--log-summary]
+                [--log-full] [-p] [-m] [-s] [-g] [--log-output]
+                [-f] [-c] [--gray]
+                DIR NAME
+
+
+positional arguments:
+  DIR                   path to dataset
+  NAME                  experiment name
+
+optional arguments:
+  -h                    show this help message and exit
+  -b                    mini-batch size 
+  -c                    list of cameras to use
+  -f                    frequency for outputting dispnet outputs
+  -g                    weight for ground truth pose supervision loss
+  -j                    number of data loading workers 
+  -m                    weight for explainabilty mask loss 
+  -p                    weight for photometric loss 
+  -s                    weight for disparity smoothness loss   
+  --lr                  initial learning rate 
+  --save-path           where to save outputs
+  --sequence-length     sequence length for training 
+  --rotation-mode       rotation mode for PoseExpnet 
+  --padding-mode        padding mode for image warping 
+  --epochs              number of total epochs to run
+  --momentum            momentum for sgd, alpha parameter for adam 
+  --beta                beta parameters for adam 
+  --weight-decay        weight decay 
+  --print-freq          print frequency 
+  --pretrained-disp     path to pre-trained dispnet model 
+  --pretrained-exppose  path to pre-trained Exp Pose net model
+  --seed                seed for random functions
+  --log-summary         csv where to save per-epoch train and valid stats
+  --log-full            csv where to save per-gradient descent train stats
+  --log-output          will log dispnet outputs at validation
+  --gray                images are grayscale 
+  
+  
+
+```
 
 ## Inference
 
