@@ -16,7 +16,7 @@ This thesis project proposes a data-driven, unsupervised framework for performin
             16
 ```
 
-While the device in this case is equipped with 17 imagers, the proposed framework works with any number of cameras, including monocular imagery. The scripts used for training in this thesis project are provided in ```training_scripts```, and includes scripts for training on monocular and trinocular imagery, all imagers in the *SU* plane (horizontal) and the complete *SUTV* plane (the full light field).
+While the device in this case is equipped with 17 imagers, the proposed framework works with any number of cameras, including monocular imagery. The scripts used for training in this thesis project are provided in ```training_scripts```, and includes scripts for training on monocular and trinocular imagery, all imagers in the *SU* plane (horizontal) and the complete *SUTV* plane (the full light field). 
 
 The approach uses two CNN's:
 

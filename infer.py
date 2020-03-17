@@ -50,6 +50,9 @@ def main():
         train=False, 
         transform=transform,
         sequence=args.seq,
+        lf_format='focalstack' if config.focalstack else 'stack',
+        num_cmaeras=config.num_cameras,
+        num_planes=config.num_planes
     )
 
     input_channels = dataset[0][1].shape[0]   

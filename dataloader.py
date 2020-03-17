@@ -8,6 +8,7 @@ import os
 from imageio import imread
 from path import Path
 from custom_transforms import get_relative_6dof
+from focalstack import load_multiplane_focalstack
 
 import matplotlib.pyplot as plt
 
@@ -47,6 +48,8 @@ class SequenceFolder(data.Dataset):
         .
 
         transform functions must take in a list a images and a numpy array (usually intrinsics matrix)
+
+        Can load images as focal stack, must pass in arguments lf_format='focalstack', num_cameras, num_planes.
     """
 
     def __init__(self, root, 
@@ -59,6 +62,9 @@ class SequenceFolder(data.Dataset):
         target_transform=None, 
         shuffle=True,
         sequence=None,
+        lf_format='stack',           # Parameters to change if using focal stack only
+        num_cameras=None,            # ========
+        num_planes=None              # ========
     ):
 
         np.random.seed(seed)
@@ -67,6 +73,9 @@ class SequenceFolder(data.Dataset):
         self.gray=gray
         self.root = Path(root)
         self.shuffle = shuffle
+        self.lfformat = lf_format
+        self.numcameras = num_cameras 
+        self.numplanes = num_planes
         scene_list_path = self.root/'train.txt' if train else self.root/'val.txt'
         
         if sequence is not None:
@@ -101,9 +110,15 @@ class SequenceFolder(data.Dataset):
         sample = self.samples[index]
         tgt_img = load_as_float(sample['tgt'], False)
         ref_imgs = [load_as_float(ref_img, False) for ref_img in sample['ref_imgs']]
+        
+        if self.lfformat == 'stack':
+            tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
+            ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
 
-        tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
-        ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
+        elif self.lfformat == 'focalstack':
+            tgt_lf = load_multiplane_focalstack(sample['tgt'], numplanes=self.numplanes, numcameras=self.numcameras, gray=self.gray)
+            ref_lfs = [load_multiplane_focalstack(ref_img, numplanes=self.numplanes, numcameras=self.numcameras, gray=self.gray) for ref_img in sample['ref_imgs']]
+
         pose = torch.Tensor([load_relative_pose(sample['tgt'], ref) for ref in sample['ref_imgs']])
         
         if self.transform is not None:
