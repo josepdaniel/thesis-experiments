@@ -1,0 +1,1 @@
+python3 train.py ~/Documents/epidata/module-1-1/module1-1-png/ -b2 -s1.0 -m0.0 --sequence-length 3 --epochs 500 --log-output -c 5 6 7 8 9 10 11 12 13 --gray
