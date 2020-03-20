@@ -4,7 +4,7 @@ import custom_transforms
 import argparse
 import matplotlib.pyplot as plt 
 import numpy as np
-from dataloader import SequenceFolder
+from dataloader import getValidationFocalstackLoader, getValidationStackedLFLoader
 from tqdm import tqdm
 from lfmodels import LFDispNet as DispNetS
 from lfmodels import LFPoseNet as PoseNet
@@ -41,19 +41,31 @@ def main():
         custom_transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
     ])
 
-    dataset = SequenceFolder(
-        config.data, 
-        cameras=config.cameras,
-        gray=config.gray,
-        sequence_length=config.sequence_length, 
-        shuffle=False, 
-        train=False, 
-        transform=transform,
-        sequence=args.seq,
-        lf_format='focalstack' if config.focalstack else 'stack',
-        num_cameras=config.num_cameras,
-        num_planes=config.num_planes
-    )
+    # Preserve compatability with old config.pkl files. 
+    # Old ones labelled config.focalstack as either True or False
+    # New models don't have the 'focalstack' field, instead they have lfformat=[focalstack/stack]
+    try:
+        if config.lfformat == 'focalstack':
+            dataset = getValidationFocalstackLoader(config, args.seq ,transform, shuffle=False)
+            print("Loading images as focalstack")
+        elif config.lfformat == 'stack':
+            dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
+            print("Loading images as stack")
+    
+    except AttributeError:
+        if ('focalstack' not in config):
+            dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
+            print("Loading images as stack")
+        elif config.focalstack:
+            dataset = getValidationFocalstackLoader(config, args.seq ,transform, shuffle=False)
+            print("Loading images as focalstack")
+        else:
+            dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
+            print("Loading images as stack")
+
+
+
+
 
     input_channels = dataset[0][1].shape[0]   
 

@@ -37,6 +37,7 @@ def parseTrainingArgs():
     focalstack_args.add_argument('-f', '--training-output-freq', type=int, help='frequence for outputting dispnet outputs and warped imgs at training for all scales if 0 will not output', metavar='N', default=0)
     focalstack_args.add_argument('--gray', action='store_true', help="images are grayscale")
 
+    # Arguments for training with colour channel stacks
     stack_args = subparsers.add_parser('stack', help="Train using colour-channel stacks")
     stack_args.add_argument('data', metavar='DIR', help='path to dataset')
     stack_args.add_argument('name', metavar='NAME', help='experiment name')

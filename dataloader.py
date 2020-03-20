@@ -145,7 +145,7 @@ class SequenceFolder(data.Dataset):
 
 
 
-def getFocalstackLoaders(args, train_transform, valid_transform):
+def getFocalstackLoaders(args, train_transform, valid_transform, shuffle=True):
     train_set = SequenceFolder(
         args.data,
         gray=args.gray,
@@ -155,7 +155,8 @@ def getFocalstackLoaders(args, train_transform, valid_transform):
         sequence_length=args.sequence_length,
         lf_format='focalstack',
         num_cameras=args.num_cameras,
-        num_planes=args.num_planes
+        num_planes=args.num_planes,
+        shuffle=shuffle,
     )
 
     val_set = SequenceFolder(
@@ -167,14 +168,28 @@ def getFocalstackLoaders(args, train_transform, valid_transform):
         sequence_length=args.sequence_length,
         lf_format='focalstack',
         num_cameras=args.num_cameras,
-        num_planes=args.num_planes
+        num_planes=args.num_planes,
+        shuffle=shuffle,
     )
 
     return train_set, val_set
 
+def getValidationFocalstackLoader(args, sequence=None, transform=None, shuffle=False):
+    return SequenceFolder(
+        args.data,
+        gray=args.gray,
+        transform=transform,
+        seed=args.seed,
+        train=False,
+        sequence_length=args.sequence_length,
+        lf_format='focalstack',
+        num_cameras=args.num_cameras,
+        num_planes=args.num_planes,
+        shuffle=shuffle,
+        sequence=sequence,
+    )
 
-
-def getStackedLFLoaders(args, train_transform, valid_transform):
+def getStackedLFLoaders(args, train_transform, valid_transform, shuffle=True):
     train_set = SequenceFolder(
         args.data,
         gray=args.gray,
@@ -184,6 +199,7 @@ def getStackedLFLoaders(args, train_transform, valid_transform):
         train=True,
         sequence_length=args.sequence_length,
         lf_format='stack',
+        shuffle=shuffle,
     )
 
     val_set = SequenceFolder(
@@ -195,6 +211,21 @@ def getStackedLFLoaders(args, train_transform, valid_transform):
         train=False,
         sequence_length=args.sequence_length,
         lf_format='stack',
+        shuffle=shuffle,
     )
 
     return train_set, val_set
+
+def getValidationStackedLFLoader(args, sequence=None, transform=None, shuffle=False):
+    return SequenceFolder(
+        args.data,
+        gray=args.gray,
+        cameras=args.cameras,
+        transform=transform,
+        seed=args.seed,
+        train=False,
+        sequence_length=args.sequence_length,
+        lf_format='stack',
+        shuffle=shuffle,
+        sequence=sequence,
+    )
