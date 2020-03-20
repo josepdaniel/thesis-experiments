@@ -51,7 +51,7 @@ def main():
         transform=transform,
         sequence=args.seq,
         lf_format='focalstack' if config.focalstack else 'stack',
-        num_cmaeras=config.num_cameras,
+        num_cameras=config.num_cameras,
         num_planes=config.num_planes
     )
 
