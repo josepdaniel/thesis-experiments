@@ -1,9 +1,8 @@
-python3 train.py focalstack \
+python3 train.py stack \
 ~/Documents/thesis/epidata/module-1-1/module1-1-png \
-unsupervised/focalstack/5-cameras-9-planes \
+unsupervised/stack/test \
 --save-path ~/Documents/thesis/checkpoints \
---num-cameras 5 \
---num-planes 9 \
+--cameras 7 8 9 \
 --sequence-length 3 \
 -b2 -s1.0 -m0.0 -g0.0 \
 --epochs 300 \

@@ -1,7 +1,8 @@
 import sys 
 
-from dataloader import SequenceFolder
-import argparse
+from dataloader import getFocalstackLoaders, getStackedLFLoaders
+from parser import parseTrainingArgs
+# import argparse
 import time
 import csv
 import numpy as np
@@ -17,40 +18,6 @@ from loss_functions import photometric_reconstruction_loss, explainability_loss,
 from logger import TermLogger, AverageMeter
 from tensorboardX import SummaryWriter
 
-parser = argparse.ArgumentParser(description='Unsupervised learning of depth and visual odometry from light fields', formatter_class=argparse.ArgumentDefaultsHelpFormatter)
-
-parser.add_argument('data', metavar='DIR', help='path to dataset')
-parser.add_argument('name', metavar='NAME', help='experiment name')
-parser.add_argument('--save-path', metavar='PATH', default="~/Documents/checkpoints/", help='where to save outputs')
-parser.add_argument('--sequence-length', type=int, metavar='N', help='sequence length for training', default=3)
-parser.add_argument('--rotation-mode', type=str, choices=['euler', 'quat'], default='euler', help='rotation mode for PoseExpnet : [euler, quat]')
-parser.add_argument('--padding-mode', type=str, choices=['zeros', 'border'], default='zeros', help='padding mode for image warping')
-parser.add_argument('-j', '--workers', default=4, type=int, metavar='N', help='number of data loading workers')
-parser.add_argument('--epochs', default=200, type=int, metavar='N', help='number of total epochs to run')
-parser.add_argument('-b', '--batch-size', default=4, type=int, metavar='N', help='mini-batch size')
-parser.add_argument('--lr', '--learning-rate', default=2e-4, type=float, metavar='LR', help='initial learning rate')
-parser.add_argument('--momentum', default=0.9, type=float, metavar='M', help='momentum for sgd, alpha parameter for adam')
-parser.add_argument('--beta', default=0.999, type=float, metavar='M', help='beta parameters for adam')
-parser.add_argument('--weight-decay', '--wd', default=0, type=float, metavar='W', help='weight decay')
-parser.add_argument('--print-freq', default=10, type=int, metavar='N', help='print frequency')
-parser.add_argument('--pretrained-disp', dest='pretrained_disp', default=None, metavar='PATH', help='path to pre-trained dispnet model')
-parser.add_argument('--pretrained-exppose', dest='pretrained_exp_pose', default=None, metavar='PATH', help='path to pre-trained Exp Pose net model')
-parser.add_argument('--seed', default=0, type=int, help='seed for random functions, and network initialization')
-parser.add_argument('--log-summary', default='progress_log_summary.csv', metavar='PATH', help='csv where to save per-epoch train and valid stats')
-parser.add_argument('--log-full', default='progress_log_full.csv', metavar='PATH', help='csv where to save per-gradient descent train stats')
-parser.add_argument('-p', '--photo-loss-weight', type=float, help='weight for photometric loss', metavar='W', default=1)
-parser.add_argument('-m', '--mask-loss-weight', type=float, help='weight for explainabilty mask loss', metavar='W', default=0)
-parser.add_argument('-s', '--smooth-loss-weight', type=float, help='weight for disparity smoothness loss', metavar='W', default=0.1)
-parser.add_argument('-g', '--gt-pose-loss-weight', type=float, help='weight for ground truth pose supervision loss', metavar='W', default=0)
-parser.add_argument('--log-output', action='store_true', help='will log dispnet outputs and warped imgs at validation step')
-parser.add_argument('-f', '--training-output-freq', type=int, help='frequence for outputting dispnet outputs and warped imgs at training for all scales if 0 will not output', metavar='N', default=0)
-parser.add_argument('-c', '--cameras', nargs='+', type=int, help='which cameras to use', default=[8])
-parser.add_argument('--gray', action='store_true', help="images are grayscale")
-parser.add_argument('--focalstack', action='store_true', help="images are focal stacks")
-parser.add_argument('--num-cameras', type=int, help='how many cameras to use to construct the focal stack')
-parser.add_argument('--num-planes', type=int, help='how many planes the focal stack should focus on')
-
-
 best_error = -1
 n_iter = 0
 device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cpu")
@@ -58,7 +25,7 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 
 def main():
     global best_error, n_iter, device
-    args = parser.parse_args()
+    args = parseTrainingArgs()
     args.training_output_freq = 100
     save_path = make_save_path(args)
     args.save_path = save_path
@@ -75,31 +42,11 @@ def main():
 
     # Create dataloader
     print("=> Fetching scenes in '{}'".format(args.data))
-    train_set = SequenceFolder(
-        args.data,
-        gray=args.gray,
-        cameras=args.cameras,
-        transform=train_transform,
-        seed=args.seed,
-        train=True,
-        sequence_length=args.sequence_length,
-        lf_format='focalstack' if args.focalstack else 'stack',
-        num_cameras=args.num_cameras,
-        num_planes=args.num_planes
-    )
-    
-    val_set = SequenceFolder(
-        args.data,
-        gray=args.gray,
-        cameras=args.cameras,
-        transform=valid_transform,
-        seed=args.seed,
-        train=False,
-        sequence_length=args.sequence_length,
-        lf_format='focalstack' if args.focalstack else 'stack',
-        num_cameras=args.num_cameras,
-        num_planes=args.num_planes
-    )
+
+    if args.lfformat == 'focalstack':
+        train_set, val_set = getFocalstackLoaders(args, train_transform, valid_transform)
+    elif args.lfformat == 'stack':
+        train_set, val_set = getStackedLFLoaders(args, train_transform, valid_transform)
 
     print('=> {} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
     print('=> {} samples found in {} valid scenes'.format(len(val_set), len(val_set.scenes)))

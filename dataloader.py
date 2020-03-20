@@ -67,6 +67,8 @@ class SequenceFolder(data.Dataset):
         num_planes=None              # ========
     ):
 
+        assert lf_format in ["stack", "focalstack"]
+
         np.random.seed(seed)
         random.seed(seed)
         self.cameras = cameras
@@ -140,3 +142,59 @@ class SequenceFolder(data.Dataset):
 
     def __len__(self):
         return len(self.samples)
+
+
+
+def getFocalstackLoaders(args, train_transform, valid_transform):
+    train_set = SequenceFolder(
+        args.data,
+        gray=args.gray,
+        transform=train_transform,
+        seed=args.seed,
+        train=True,
+        sequence_length=args.sequence_length,
+        lf_format='focalstack',
+        num_cameras=args.num_cameras,
+        num_planes=args.num_planes
+    )
+
+    val_set = SequenceFolder(
+        args.data,
+        gray=args.gray,
+        transform=valid_transform,
+        seed=args.seed,
+        train=False,
+        sequence_length=args.sequence_length,
+        lf_format='focalstack',
+        num_cameras=args.num_cameras,
+        num_planes=args.num_planes
+    )
+
+    return train_set, val_set
+
+
+
+def getStackedLFLoaders(args, train_transform, valid_transform):
+    train_set = SequenceFolder(
+        args.data,
+        gray=args.gray,
+        cameras = args.cameras,
+        transform=train_transform,
+        seed=args.seed,
+        train=True,
+        sequence_length=args.sequence_length,
+        lf_format='stack',
+    )
+
+    val_set = SequenceFolder(
+        args.data,
+        gray=args.gray,
+        cameras=args.cameras,
+        transform=valid_transform,
+        seed=args.seed,
+        train=False,
+        sequence_length=args.sequence_length,
+        lf_format='stack',
+    )
+
+    return train_set, val_set
