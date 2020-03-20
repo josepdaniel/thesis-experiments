@@ -26,8 +26,7 @@ class Normalize(object):
 
     def __call__(self, images, intrinsics):
         for tensor in images:
-            for t, m, s in zip(tensor, self.mean, self.std):
-                t.sub_(m).div_(s)
+            tensor.sub_(self.mean).div_(self.std)
         return images, intrinsics
 
 

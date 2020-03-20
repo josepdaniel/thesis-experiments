@@ -37,7 +37,7 @@ def main():
     # Data preprocessing
     train_transform = valid_transform = custom_transforms.Compose([
         custom_transforms.ArrayToTensor(),
-        custom_transforms.Normalize(mean=[0.5, 0.5, 0.5], std=[0.5, 0.5, 0.5])
+        custom_transforms.Normalize(mean=0.5, std=0.5)
     ])
 
     # Create dataloader
