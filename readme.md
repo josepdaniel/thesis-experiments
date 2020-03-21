@@ -5,15 +5,17 @@
 This thesis project proposes a data-driven, unsupervised framework for performing visual odometry, using multi-view imaging devices. In these experiments, a camera with 17 sub-apertures arranged in a cross-hair formation was used. The cameras are indexed as shown:
 
 ```
-            0
-            1
-            2
-            3
-4  5  6  7  8  9  10 11 12 
-            13
-            14
-            15
-            16
+              0   
+              1
+              2
+              3
+  4  5  6  7  8  9  10 11 12 
+              13               z
+              14              /
+              15             /_____ x   
+              16             | 
+                             | 
+                             y
 ```
 
 While the device in this case is equipped with 17 imagers, the proposed framework works with any number of cameras, including monocular imagery. The scripts used for training in this thesis project are provided in ```training_scripts```, and includes scripts for training on monocular and trinocular imagery, all imagers in the *SU* plane (horizontal) and the complete *SUTV* plane (the full light field). 

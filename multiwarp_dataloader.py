@@ -39,6 +39,17 @@ def load_relative_pose(tgt, ref):
     return rel_pose
 
 
+class MetaData:
+    def __init__(self):
+        self.metadata = {}
+    def set(self, key, value):
+        self.metadata[key] = value
+    def get(self, key):
+        return self.metadata[key]
+    def getAsDict(self):
+        return self.metadata
+
+
 class FocalstackLoader(data.Dataset):
     """
     Arguments:
@@ -113,8 +124,8 @@ class FocalstackLoader(data.Dataset):
 
     def __getitem__(self, index):
         sample = self.samples[index]
-        tgt_lf = load_lightfield(sample['tgt'], self.cameras, False)
-        ref_lfs = [load_lightfield(ref_img, self.cameras, False) for ref_img in sample['ref_imgs']]
+        tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
+        ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
         
         tgt_focalstack = load_multiplane_focalstack(sample['tgt'], numplanes=self.numplanes, numcameras=self.numcameras, gray=self.gray)
         ref_focalstacks = [load_multiplane_focalstack(ref_img, numplanes=self.numplanes, numcameras=self.numcameras, gray=self.gray) for ref_img in sample['ref_imgs']]
@@ -133,8 +144,25 @@ class FocalstackLoader(data.Dataset):
         ref_lfs = [torch.cat(ref, 0) for ref in ref_lfs]    
         tgt_focalstack = torch.cat(tgt_focalstack, 0)       
         ref_focalstacks = [torch.cat(ref, 0) for ref in ref_focalstacks]     
+        
+        metadata = MetaData()
+        metadata.set('cameras', self.cameras)
+        metadata.set('tgt_name', sample['tgt'])
+        metadata.set('ref_names', sample['ref_imgs'])
+        metadata.set('gray', self.gray)
+        metadata.set('flipped', False)
 
-        return tgt_lf, tgt_focalstack, ref_lfs, ref_focalstacks, intrinsics, np.linalg.inv(intrinsics), pose
+        trainingdata = {}
+        trainingdata['tgt_lf'] = tgt_lf
+        trainingdata['tgt_lf_formatted'] = tgt_focalstack
+        trainingdata['ref_lfs'] = ref_lfs
+        trainingdata['ref_lfs_formatted'] = ref_focalstacks
+        trainingdata['intrinsics'] = intrinsics
+        trainingdata['intrinsics_inv'] = np.linalg.inv(intrinsics)
+        trainingdata['pose_gt'] = pose
+        trainingdata['metadata'] = metadata.getAsDict()
+
+        return trainingdata
 
     def __len__(self):
         return len(self.samples)
@@ -211,8 +239,8 @@ class StackedLFLoader(data.Dataset):
 
     def __getitem__(self, index):
         sample = self.samples[index]
-        tgt_lf = load_lightfield(sample['tgt'], self.cameras, False)
-        ref_lfs = [load_lightfield(ref_img, self.cameras, False) for ref_img in sample['ref_imgs']]
+        tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
+        ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
         
         pose = torch.Tensor([load_relative_pose(sample['tgt'], ref) for ref in sample['ref_imgs']])
         intrinsics = np.copy(sample['intrinsics'])
@@ -243,6 +271,7 @@ def getFocalstackLoaders(args, train_transform, valid_transform, shuffle=True):
         fs_num_cameras=args.num_cameras,
         fs_num_planes=args.num_planes,
         shuffle=shuffle,
+        sequence="seq3"
     )
 
     val_set = FocalstackLoader(

@@ -1,13 +1,84 @@
 from __future__ import division
 import torch
-from torch import nn
+from torch import nn, Tensor
 import torch.nn.functional as F
-from inverse_warp import inverse_warp
+from inverse_warp import inverse_warp, inverse_multiwarp
+from inverse_warp import transform_module_pose_to_subaperture_pose
 
 
-def photometric_reconstruction_loss(tgt_img, ref_imgs, intrinsics,
-                                    depth, explainability_mask, pose,
-                                    rotation_mode='euler', padding_mode='zeros'):
+def multiwarp_photometric_loss(
+    tgt_lf, ref_lfs, intrinsics, depth, pose, metadata,
+    rotation_mode='euler', padding_mode='zeros'):
+
+    """ Computes photometric reconstruction loss across an entire lightfield. 
+
+    Arguments:
+        tgt_lf: target lightfield (to reconstruct) -- [B, N, H, W]
+        ref_lfs: list of reference lightfields (to be sampled in reconstructing) - [[B, N, H, W]]
+        intrinsics: k matrix -- [B, 3, 3]
+        depth: [B, NCams, H, W]
+        pose: [B, SeqLen, 6]
+        metadata: metadata returned from the dataloader
+        rotation_mode: euler or quat
+        padding_mode: zeros or border
+
+    Returns:
+        photometric_warp_loss
+        warped_images
+        difference_images
+    """
+
+    def one_scale(depth):
+        assert(pose.size(1) == len(ref_lfs))
+        reconstruction_loss = 0
+        b, n, h, w = depth.size()
+        downscale = tgt_lf.size(2)/h
+
+        tgt_lf_scaled = F.interpolate(tgt_lf, (h, w), mode='area')
+        ref_lf_scaled = [F.interpolate(ref_lf, (h, w), mode='area') for ref_lf in ref_lfs]
+        intrinsics_scaled = torch.cat((intrinsics[:, 0:2]/downscale, intrinsics[:, 2:]), dim=1)
+
+        warped_images = []
+        diff_images = []
+
+        # For every camera, perform the inverse warp
+        for N, cam in enumerate(metadata['cameras']):
+            current_depth = depth[:, N, :, :]
+
+            # For every reference image in the sequence 
+            for i, ref_img in enumerate(ref_lf_scaled):
+                current_pose = transform_module_pose_to_subaperture_pose(pose[:, i], cam)
+                ref_img = ref_img[:, N:N+1, :, :]
+                ref_image_warped, valid_points = inverse_multiwarp(ref_img, current_depth, current_pose, intrinsics_scaled, rotation_mode, padding_mode)
+                diff = (tgt_lf_scaled[:, N:N+1, :, :] - ref_image_warped) * valid_points.unsqueeze(1).float()
+                reconstruction_loss += diff.abs().mean()    
+                warped_images.append(ref_image_warped)
+                diff_images.append(diff)
+        return reconstruction_loss, warped_images, diff_images
+    
+    
+    
+    if type(depth) not in [list, tuple]:
+        depth = [depth]
+
+    total_loss = 0
+    warped_image_results = []
+    difference_image_results = []
+    
+
+    for d in depth:
+        loss, warped, diff = one_scale(d)
+        total_loss += loss 
+        warped_image_results.append(warped)
+        difference_image_results.append(diff)
+    
+    return total_loss, warped_image_results, difference_image_results
+
+
+def photometric_reconstruction_loss(
+    tgt_img, ref_imgs, intrinsics,
+    depth, explainability_mask, pose,
+    rotation_mode='euler', padding_mode='zeros'):
     def one_scale(depth, explainability_mask):
         assert(explainability_mask is None or depth.size()[2:] == explainability_mask.size()[2:])
         assert(pose.size(1) == len(ref_imgs))
@@ -26,9 +97,7 @@ def photometric_reconstruction_loss(tgt_img, ref_imgs, intrinsics,
         for i, ref_img in enumerate(ref_imgs_scaled):
             current_pose = pose[:, i]
 
-            ref_img_warped, valid_points = inverse_warp(ref_img, depth[:,0], current_pose,
-                                                        intrinsics_scaled,
-                                                        rotation_mode, padding_mode)
+            ref_img_warped, valid_points = inverse_warp(ref_img, depth[:,0], current_pose, intrinsics_scaled, rotation_mode, padding_mode)
             diff = (tgt_img_scaled - ref_img_warped) * valid_points.unsqueeze(1).float()
 
             if explainability_mask is not None:

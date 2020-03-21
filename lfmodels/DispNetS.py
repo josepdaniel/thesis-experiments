@@ -69,9 +69,9 @@ class LFDispNet(nn.Module):
         self.iconv6 = conv(upconv_planes[1] + conv_planes[4], upconv_planes[1])
         self.iconv5 = conv(upconv_planes[2] + conv_planes[3], upconv_planes[2])
         self.iconv4 = conv(upconv_planes[3] + conv_planes[2], upconv_planes[3])
-        self.iconv3 = conv(1 + upconv_planes[4] + conv_planes[1], upconv_planes[4])
-        self.iconv2 = conv(1 + upconv_planes[5] + conv_planes[0], upconv_planes[5])
-        self.iconv1 = conv(1 + upconv_planes[6], upconv_planes[6])
+        self.iconv3 = conv(out_channels + upconv_planes[4] + conv_planes[1], upconv_planes[4])
+        self.iconv2 = conv(out_channels + upconv_planes[5] + conv_planes[0], upconv_planes[5])
+        self.iconv1 = conv(out_channels + upconv_planes[6], upconv_planes[6])
 
         self.predict_disp4 = predict_disp(upconv_planes[3], out_channels)
         self.predict_disp3 = predict_disp(upconv_planes[4], out_channels)

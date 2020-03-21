@@ -1,6 +1,8 @@
 from __future__ import division
 import torch
 import torch.nn.functional as F
+from epimodule import get_sub_cam_to_center_cam_translation 
+from epimodule import get_center_cam_to_sub_cam_translation
 
 pixel_coords = None
 
@@ -153,8 +155,7 @@ def pose_vec2mat(vec, rotation_mode='euler'):
 
 
 def inverse_warp(img, depth, pose, intrinsics, rotation_mode='euler', padding_mode='zeros'):
-    """
-    Inverse warp a source image to the target image plane.
+    """ Inverse warp a source image to the target image plane.
 
     Args:
         img: the source image (where to sample pixels) -- [B, 3, H, W]
@@ -186,3 +187,63 @@ def inverse_warp(img, depth, pose, intrinsics, rotation_mode='euler', padding_mo
     valid_points = src_pixel_coords.abs().max(dim=-1)[0] <= 1
 
     return projected_img, valid_points
+
+
+def inverse_multiwarp(img, depth, pose, intrinsics, rotation_mode='euler', padding_mode='zeros'):
+    """ Inverse warp a source image to the target image plane.
+
+    Args:
+        img: the source image (where to sample pixels) -- [B, 1, H, W]
+        depth: depth map of the target image -- [B, H, W]
+        pose: 6DoF pose parameters from target to source -- [B, 4, 4]
+        intrinsics: camera intrinsic matrix -- [B, 3, 3]
+    Returns:
+        projected_img: Source image warped to the target image plane
+        valid_points: Boolean array indicating point validity
+    """
+    check_sizes(img, 'img', 'B1HW')
+    check_sizes(depth, 'depth', 'BHW')
+    check_sizes(pose, 'pose', 'B44')
+    check_sizes(intrinsics, 'intrinsics', 'B33')
+
+    batch_size, _, img_height, img_width = img.size()
+
+    cam_coords = pixel2cam(depth, intrinsics.inverse())  # [B,3,H,W]
+
+    pose_mat = pose[:, :3, :]
+
+    # Get projection matrix for tgt camera frame to source pixel frame
+    proj_cam_to_src_pixel = intrinsics @ pose_mat  # [B, 3, 4]
+
+    rot, tr = proj_cam_to_src_pixel[:,:,:3], proj_cam_to_src_pixel[:,:,-1:]
+    src_pixel_coords = cam2pixel(cam_coords, rot, tr, padding_mode)  # [B,H,W,2]
+    projected_img = F.grid_sample(img, src_pixel_coords, padding_mode=padding_mode)
+
+    valid_points = src_pixel_coords.abs().max(dim=-1)[0] <= 1
+
+    return projected_img, valid_points
+
+
+def transform_module_pose_to_subaperture_pose(module_pose, cam_num, rotation_mode='euler'):
+    """ Given the pose of the rigid epimodule, convert to the pose of a specific subaperture.
+
+    Args:
+        module_pose: the frame-to-frame pose of the center subaperture -- [B, 6]
+        cam_num: which cameras coordinate frame to transform into -- scalar integer -- [B]
+    Returns:
+        subaperture_pose: the frame-to-frame pose of the chosen subaperture
+    """
+
+    check_sizes(module_pose, 'pose', 'B6')
+    device = module_pose.device
+
+    module_pose = pose_vec2mat(module_pose) # [B, 3, 4]
+    B = module_pose.shape[0]
+    zeros = torch.zeros(B, 1, 4).to(device)
+    module_pose = torch.cat([module_pose, zeros], dim=1) # [B, 4, 4]
+    module_pose[:, 3, 3] = 1
+
+    cam_to_module = get_sub_cam_to_center_cam_translation(cam_num).to(device)
+    module_to_cam = get_center_cam_to_sub_cam_translation(cam_num).to(device)
+
+    return cam_to_module @ module_pose @ module_to_cam

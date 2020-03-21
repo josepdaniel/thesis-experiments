@@ -13,7 +13,7 @@ import custom_transforms
 import lfmodels as models
 
 from utils import tensor2array, save_checkpoint, make_save_path, log_output_tensorboard, dump_config
-from loss_functions import photometric_reconstruction_loss, explainability_loss, smooth_loss, compute_errors
+from loss_functions import multiwarp_photometric_loss, explainability_loss, smooth_loss, compute_errors
 from logger import TermLogger, AverageMeter
 from tensorboardX import SummaryWriter
 
@@ -29,7 +29,7 @@ def main():
     save_path = make_save_path(args)
     args.save_path = save_path
     dump_config(save_path, args)
-    print('=> Saving checkpoints to {}'.format(save_path))
+    print('\n\n=> Saving checkpoints to {}'.format(save_path))
     torch.manual_seed(args.seed)
     tb_writer = SummaryWriter(save_path)
 
@@ -48,7 +48,7 @@ def main():
         train_set, val_set = getStackedLFLoaders(args, train_transform, valid_transform)
 
     print('=> {} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
-    print('=> {} samples found in {} valid scenes'.format(len(val_set), len(val_set.scenes)))
+    print('=> {} samples found in {} validation scenes'.format(len(val_set), len(val_set.scenes)))
 
     print('=> Multiwarp training, warping {} sub-apertures'.format(len(args.cameras)))
 
@@ -57,28 +57,32 @@ def main():
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
     
     # Pull first example from dataset to check number of channels
-    input_channels = train_set[0][1].shape[0]   
+    input_channels = train_set[0]['tgt_lf_formatted'].shape[0]   
+    output_channels = len(args.cameras)
     args.epoch_size = len(train_loader)
-    print("=> Using {} input channels, {} total batches".format(input_channels, args.epoch_size))
-    
+    print("=> [DispNet] Using {} input channels, {} output channels".format(input_channels, output_channels))
+    print("=> [PoseNet] Using {} input channels".format(input_channels))
+
     # create model
     print("=> Creating models")
-    disp_net = models.LFDispNet(in_channels=input_channels).to(device)
+    disp_net = models.LFDispNet(in_channels=input_channels, out_channels=output_channels).to(device)
     output_exp = args.mask_loss_weight > 0
     pose_exp_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1, output_exp=args.mask_loss_weight > 0).to(device)
 
     if args.pretrained_exp_pose:
-        print("=> Using pre-trained weights for explainabilty and pose net")
+        print("=> [PoseNet] Using pre-trained weights for explainabilty and pose net")
         weights = torch.load(args.pretrained_exp_pose)
         pose_exp_net.load_state_dict(weights['state_dict'], strict=False)
     else:
+        print("=> [PoseNet] training from scratch")
         pose_exp_net.init_weights()
 
     if args.pretrained_disp:
-        print("=> Using pre-trained weights for Dispnet")
+        print("=> [DispNet] Using pre-trained weights for Dispnet")
         weights = torch.load(args.pretrained_disp)
         disp_net.load_state_dict(weights['state_dict'])
     else:
+        print("=> [DispNet] training from scratch")
         disp_net.init_weights()
 
     cudnn.benchmark = True
@@ -104,7 +108,6 @@ def main():
 
     logger = TermLogger(n_epochs=args.epochs, train_size=min(len(train_loader), args.epoch_size), valid_size=len(val_loader))
     logger.epoch_bar.start()
-
 
     for epoch in range(args.epochs):
         logger.epoch_bar.update(epoch)
@@ -159,29 +162,28 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
     end = time.time()
     logger.train_bar.update(0)
 
-    for i, (tgt_img, tgt_lf, ref_imgs, ref_lfs, intrinsics, intrinsics_inv, pose_gt) in enumerate(train_loader):
+    for i, trainingdata in enumerate(train_loader):
         log_losses = i > 0 and n_iter % args.print_freq == 0
         log_output = args.training_output_freq > 0 and n_iter % args.training_output_freq == 0
 
         # measure data loading time
         data_time.update(time.time() - end)
-        tgt_img = tgt_img.to(device)
-        ref_imgs = [img.to(device) for img in ref_imgs]
-        tgt_lf = tgt_lf.to(device)
-        ref_lfs = [lf.to(device) for lf in ref_lfs]
-        intrinsics = intrinsics.to(device)
-        pose_gt = pose_gt.to(device)
+        tgt_lf = trainingdata['tgt_lf'].to(device)
+        ref_lfs = [img.to(device) for img in trainingdata['ref_lfs']]
+        tgt_lf_formatted = trainingdata['tgt_lf_formatted'].to(device)
+        ref_lfs_formatted = [lf.to(device) for lf in trainingdata['ref_lfs_formatted']]
+        intrinsics = trainingdata['intrinsics'].to(device)
+        pose_gt = trainingdata['pose_gt'].to(device)
+        metadata = trainingdata['metadata']
 
         # compute output
-        disparities = disp_net(tgt_lf)
+        disparities = disp_net(tgt_lf_formatted)
         depth = [1/disp for disp in disparities]
 
-        explainability_mask, pose = pose_exp_net(tgt_lf, ref_lfs)
+        explainability_mask, pose = pose_exp_net(tgt_lf_formatted, ref_lfs_formatted)
 
-        loss_1, warped, diff = photometric_reconstruction_loss(
-            tgt_img, ref_imgs, intrinsics,
-            depth, explainability_mask, pose,
-            args.rotation_mode, args.padding_mode
+        loss_1, warped, diff = multiwarp_photometric_loss(
+            tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
         
         if w2 > 0:
@@ -205,10 +207,13 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
                 tb_writer.add_scalar('train/explanability_loss', loss_2.item(), n_iter)
 
         if log_output:
-            tb_writer.add_image('train/Input', tensor2array(tgt_img[0]), n_iter)
-            for k, scaled_maps in enumerate(zip(depth, disparities, warped, diff, explainability_mask)):
-                log_output_tensorboard(tb_writer, "train", 0, k, n_iter, *scaled_maps)
-                break
+            tb_writer.add_image('train/input', tensor2array(tgt_lf_formatted[0, 0, :, :]), n_iter)
+            tb_writer.add_image('train/depth', tensor2array(depth[0][0, 0, :, :]))
+            # tb_writer.add
+            # for k, scaled_maps in enumerate(zip(depth, disparities, warped, diff, explainability_mask)):
+                # log_output_tensorboard(tb_writer, "train", 0, k, n_iter, *scaled_maps)
+                
+                # break
 
 
         # record loss and EPE
@@ -244,8 +249,8 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
     losses = AverageMeter(i=3, precision=4)
     log_outputs = sample_nb_to_log > 0
     w1, w2, w3, w4 = args.photo_loss_weight, args.mask_loss_weight, args.smooth_loss_weight, args.gt_pose_loss_weight
-    poses = np.zeros(((len(val_loader)-1) * args.batch_size * (args.sequence_length-1),6))
-    disp_values = np.zeros(((len(val_loader)-1) * args.batch_size * 3))
+    # poses = np.zeros(((len(val_loader)-1) * args.batch_size * (args.sequence_length-1),6))
+    # disp_values = np.zeros(((len(val_loader)-1) * args.batch_size * 3))
 
     # switch to evaluate mode
     disp_net.eval()
@@ -253,24 +258,24 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
 
     end = time.time()
     logger.valid_bar.update(0)
-    for i, (tgt_img, tgt_lf, ref_imgs, ref_lfs, intrinsics, intrinsics_inv, pose_gt) in enumerate(val_loader):
-        tgt_img = tgt_img.to(device)
-        ref_imgs = [img.to(device) for img in ref_imgs]
-        tgt_lf = tgt_lf.to(device)
-        ref_lfs = [lf.to(device) for lf in ref_lfs]
-        intrinsics = intrinsics.to(device)
-        intrinsics_inv = intrinsics_inv.to(device)
-        pose_gt = pose_gt.to(device)
+    for i, validdata in enumerate(val_loader):
+
+        tgt_lf_formatted = validdata['tgt_lf_formatted'].to(device)
+        ref_lfs_formatted = [lf.to(device) for lf in validdata['ref_lfs_formatted']]
+        intrinsics = validdata['intrinsics'].to(device)
+        intrinsics_inv = validdata['intrinsics_inv'].to(device)
+        pose_gt = validdata['pose_gt'].to(device)
+        metadata = validdata['metadata']
 
         # compute output
-        disp = disp_net(tgt_lf)
+        disp = disp_net(tgt_lf_formatted)
         depth = 1/disp
-        explainability_mask, pose = pose_exp_net(tgt_lf, ref_lfs)
+        explainability_mask, pose = pose_exp_net(tgt_lf_formatted, ref_lfs_formatted)
 
-        loss_1, warped, diff = photometric_reconstruction_loss(tgt_img, ref_imgs,
-                                                               intrinsics, depth,
-                                                               explainability_mask, pose,
-                                                               args.rotation_mode, args.padding_mode)
+        loss_1, warped, diff = multiwarp_photometric_loss(
+            tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
+        )
+
         loss_1 = loss_1.item()
         if w2 > 0:
             loss_2 = explainability_loss(explainability_mask).item()
@@ -282,6 +287,8 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
         pose_gt_magnitude = pose_gt[:,:,:3].norm(dim=2)
         pose_loss = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
 
+        sys.exit()
+
         if log_outputs and i < sample_nb_to_log - 1:  # log first output of first batches
             if epoch == 0:
                 for j,ref in enumerate(ref_imgs):
@@ -290,14 +297,15 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
 
             log_output_tensorboard(tb_writer, 'val', i, '', epoch, 1./disp, disp, warped[0], diff[0], explainability_mask)
 
-        if log_outputs and i < len(val_loader)-1:
-            step = args.batch_size*(args.sequence_length-1)
-            poses[i * step:(i+1) * step] = pose.cpu().view(-1,6).numpy()
-            step = args.batch_size * 3
-            disp_unraveled = disp.cpu().view(args.batch_size, -1)
-            disp_values[i * step:(i+1) * step] = torch.cat([disp_unraveled.min(-1)[0],
-                                                            disp_unraveled.median(-1)[0],
-                                                            disp_unraveled.max(-1)[0]]).numpy()
+
+        # if log_outputs and i < len(val_loader)-1:
+        #     step = args.batch_size*(args.sequence_length-1)
+        #     poses[i * step:(i+1) * step] = pose.cpu().view(-1,6).numpy()
+        #     step = args.batch_size * 3
+        #     disp_unraveled = disp.cpu().view(args.batch_size, -1)
+        #     disp_values[i * step:(i+1) * step] = torch.cat([disp_unraveled.min(-1)[0],
+        #                                                     disp_unraveled.median(-1)[0],
+        #                                                     disp_unraveled.max(-1)[0]]).numpy()
 
         loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss
         losses.update([loss, loss_1, loss_2])
