@@ -271,7 +271,6 @@ def getFocalstackLoaders(args, train_transform, valid_transform, shuffle=True):
         fs_num_cameras=args.num_cameras,
         fs_num_planes=args.num_planes,
         shuffle=shuffle,
-        sequence="seq3"
     )
 
     val_set = FocalstackLoader(

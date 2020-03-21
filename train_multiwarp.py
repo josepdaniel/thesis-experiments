@@ -203,18 +203,14 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
             tb_writer.add_scalar('train/smoothness_loss', loss_3.item(), n_iter)
             tb_writer.add_scalar('train/total_loss', loss.item(), n_iter)
             tb_writer.add_scalar('train/pose_loss', pose_loss.item(), n_iter)
-            if w2 > 0:
-                tb_writer.add_scalar('train/explanability_loss', loss_2.item(), n_iter)
-
         if log_output:
-            tb_writer.add_image('train/input', tensor2array(tgt_lf_formatted[0, 0, :, :]), n_iter)
-            tb_writer.add_image('train/depth', tensor2array(depth[0][0, 0, :, :]))
-            # tb_writer.add
-            # for k, scaled_maps in enumerate(zip(depth, disparities, warped, diff, explainability_mask)):
-                # log_output_tensorboard(tb_writer, "train", 0, k, n_iter, *scaled_maps)
-                
-                # break
-
+            vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, 192, 256) * 0.5 + 0.5
+            vis_depth = tensor2array(depth[0][0, 0, :, :], colormap='magma')
+            vis_disp = tensor2array(disparities[0][0, 0, :, :], colormap='magma')
+            tb_writer.add_image('train/input', vis_img, n_iter)
+            tb_writer.add_image('train/depth', vis_depth, n_iter)
+            tb_writer.add_image('train/disp', vis_disp, n_iter)
+           
 
         # record loss and EPE
         losses.update(loss.item(), args.batch_size)
@@ -259,7 +255,8 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
     end = time.time()
     logger.valid_bar.update(0)
     for i, validdata in enumerate(val_loader):
-
+        tgt_lf = validdata['tgt_lf'].to(device)
+        ref_lfs = [ref.to(device) for ref in validdata['ref_lfs']]
         tgt_lf_formatted = validdata['tgt_lf_formatted'].to(device)
         ref_lfs_formatted = [lf.to(device) for lf in validdata['ref_lfs_formatted']]
         intrinsics = validdata['intrinsics'].to(device)
@@ -287,25 +284,15 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
         pose_gt_magnitude = pose_gt[:,:,:3].norm(dim=2)
         pose_loss = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
 
-        sys.exit()
-
         if log_outputs and i < sample_nb_to_log - 1:  # log first output of first batches
-            if epoch == 0:
-                for j,ref in enumerate(ref_imgs):
-                    tb_writer.add_image('val/Input {}/{}'.format(j, i), tensor2array(tgt_img[0]), 0)
-                    tb_writer.add_image('val/Input {}/{}'.format(j, i), tensor2array(ref[0]), 1)
+            vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, 192, 256) * 0.5 + 0.5
+            vis_depth = tensor2array(depth[0, 0, :, :], colormap='magma')
+            vis_disp = tensor2array(disp[0, 0, :, :], colormap='magma')
 
-            log_output_tensorboard(tb_writer, 'val', i, '', epoch, 1./disp, disp, warped[0], diff[0], explainability_mask)
+            tb_writer.add_image('val/target_image', vis_img)
+            tb_writer.add_image('val/disp', vis_disp)
+            tb_writer.add_image('val/depth', vis_depth)
 
-
-        # if log_outputs and i < len(val_loader)-1:
-        #     step = args.batch_size*(args.sequence_length-1)
-        #     poses[i * step:(i+1) * step] = pose.cpu().view(-1,6).numpy()
-        #     step = args.batch_size * 3
-        #     disp_unraveled = disp.cpu().view(args.batch_size, -1)
-        #     disp_values[i * step:(i+1) * step] = torch.cat([disp_unraveled.min(-1)[0],
-        #                                                     disp_unraveled.median(-1)[0],
-        #                                                     disp_unraveled.max(-1)[0]]).numpy()
 
         loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss
         losses.update([loss, loss_1, loss_2])
@@ -316,16 +303,17 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
         logger.valid_bar.update(i+1)
         if i % args.print_freq == 0:
             logger.valid_writer.write('valid: Time {} Loss {}'.format(batch_time, losses))
-    if log_outputs:
-        prefix = 'valid poses'
-        coeffs_names = ['tx', 'ty', 'tz']
-        if args.rotation_mode == 'euler':
-            coeffs_names.extend(['rx', 'ry', 'rz'])
-        elif args.rotation_mode == 'quat':
-            coeffs_names.extend(['qx', 'qy', 'qz'])
-        for i in range(poses.shape[1]):
-            tb_writer.add_histogram('{} {}'.format(prefix, coeffs_names[i]), poses[:,i], epoch)
-        tb_writer.add_histogram('disp_values', disp_values, epoch)
+    
+    # if log_outputs:
+        # prefix = 'valid poses'
+        # coeffs_names = ['tx', 'ty', 'tz']
+        # if args.rotation_mode == 'euler':
+            # coeffs_names.extend(['rx', 'ry', 'rz'])
+        # elif args.rotation_mode == 'quat':
+            # coeffs_names.extend(['qx', 'qy', 'qz'])
+        # for i in range(poses.shape[1]):
+            # tb_writer.add_histogram('{} {}'.format(prefix, coeffs_names[i]), poses[:,i], epoch)
+        # tb_writer.add_histogram('disp_values', disp_values, epoch)
     logger.valid_bar.update(len(val_loader))
     return losses.avg, ['val/total_loss', 'val/photometric_error', 'val/explainability_loss']
 
