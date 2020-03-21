@@ -13,9 +13,9 @@ def downsample_conv(in_planes, out_planes, kernel_size=3):
     )
 
 
-def predict_disp(in_planes):
+def predict_disp(in_planes, out_planes):
     return nn.Sequential(
-        nn.Conv2d(in_planes, 1, kernel_size=3, padding=1),
+        nn.Conv2d(in_planes, out_planes, kernel_size=3, padding=1),
         nn.Sigmoid()
     )
 
@@ -41,7 +41,7 @@ def crop_like(input, ref):
 
 class LFDispNet(nn.Module):
 
-    def __init__(self, in_channels=3, alpha=10, beta=0.01):
+    def __init__(self, in_channels=3, out_channels=1, alpha=10, beta=0.01):
         super(LFDispNet, self).__init__()
 
         self.alpha = alpha
@@ -73,10 +73,10 @@ class LFDispNet(nn.Module):
         self.iconv2 = conv(1 + upconv_planes[5] + conv_planes[0], upconv_planes[5])
         self.iconv1 = conv(1 + upconv_planes[6], upconv_planes[6])
 
-        self.predict_disp4 = predict_disp(upconv_planes[3])
-        self.predict_disp3 = predict_disp(upconv_planes[4])
-        self.predict_disp2 = predict_disp(upconv_planes[5])
-        self.predict_disp1 = predict_disp(upconv_planes[6])
+        self.predict_disp4 = predict_disp(upconv_planes[3], out_channels)
+        self.predict_disp3 = predict_disp(upconv_planes[4], out_channels)
+        self.predict_disp2 = predict_disp(upconv_planes[5], out_channels)
+        self.predict_disp1 = predict_disp(upconv_planes[6], out_channels)
 
     def init_weights(self):
         for m in self.modules():
@@ -130,6 +130,6 @@ class LFDispNet(nn.Module):
         disp1 = self.alpha * self.predict_disp1(out_iconv1) + self.beta
 
         if self.training:
-            return disp1, disp2, disp3, disp4
+            return disp1, disp2 #, disp3, disp4
         else:
             return disp1
