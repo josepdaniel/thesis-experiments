@@ -4,7 +4,6 @@ from multiwarp_dataloader import getFocalstackLoaders, getStackedLFLoaders
 from parser import parseMultiwarpTrainingArgs
 import time
 import csv
-import numpy as np
 import torch
 import torch.backends.cudnn as cudnn
 import torch.optim
@@ -33,15 +32,15 @@ def main():
     torch.manual_seed(args.seed)
     tb_writer = SummaryWriter(save_path)
 
-    # Data preprocessing
+    # Data pre-processing
     train_transform = valid_transform = custom_transforms.Compose([
         custom_transforms.ArrayToTensor(),
         custom_transforms.Normalize(mean=0.5, std=0.5)
     ])
 
-    # Create dataloader
+    # Create data loader
     print("=> Fetching scenes in '{}'".format(args.data))
-
+    train_set, val_set = None, None
     if args.lfformat == 'focalstack':
         train_set, val_set = getFocalstackLoaders(args, train_transform, valid_transform)
     elif args.lfformat == 'stack':
@@ -50,7 +49,7 @@ def main():
     print('=> {} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
     print('=> {} samples found in {} validation scenes'.format(len(val_set), len(val_set.scenes)))
 
-    print('=> Multiwarp training, warping {} sub-apertures'.format(len(args.cameras)))
+    print('=> Multi-warp training, warping {} sub-apertures'.format(len(args.cameras)))
 
     # Create batch loader
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
@@ -70,7 +69,7 @@ def main():
     pose_exp_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1, output_exp=args.mask_loss_weight > 0).to(device)
 
     if args.pretrained_exp_pose:
-        print("=> [PoseNet] Using pre-trained weights for explainabilty and pose net")
+        print("=> [PoseNet] Using pre-trained weights for pose net")
         weights = torch.load(args.pretrained_exp_pose)
         pose_exp_net.load_state_dict(weights['state_dict'], strict=False)
     else:
@@ -78,7 +77,7 @@ def main():
         pose_exp_net.init_weights()
 
     if args.pretrained_disp:
-        print("=> [DispNet] Using pre-trained weights for Dispnet")
+        print("=> [DispNet] Using pre-trained weights for DispNet")
         weights = torch.load(args.pretrained_disp)
         disp_net.load_state_dict(weights['state_dict'])
     else:
@@ -289,9 +288,9 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
             vis_depth = tensor2array(depth[0, 0, :, :], colormap='magma')
             vis_disp = tensor2array(disp[0, 0, :, :], colormap='magma')
 
-            tb_writer.add_image('val/target_image', vis_img)
-            tb_writer.add_image('val/disp', vis_disp)
-            tb_writer.add_image('val/depth', vis_depth)
+            tb_writer.add_image('val/target_image', vis_img, n_iter)
+            tb_writer.add_image('val/disp', vis_disp, n_iter)
+            tb_writer.add_image('val/depth', vis_depth, n_iter)
 
 
         loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss

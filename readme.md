@@ -1,6 +1,6 @@
 # Unsupervised learning of depth and visual odometry from light fields
 
-<img src="epimodule.jpg" alt="The camera" width="400"/>
+![](./epimodule.jpg)
 
 This thesis project proposes a data-driven, unsupervised framework for performing visual odometry, using multi-view imaging devices. In these experiments, a camera with 17 sub-apertures arranged in a cross-hair formation was used. The cameras are indexed as shown:
 

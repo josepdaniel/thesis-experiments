@@ -4,11 +4,11 @@ import custom_transforms
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
-from dataloader import getValidationFocalstackLoader, getValidationStackedLFLoader
-from tqdm import tqdm
+from multiwarp_dataloader import getValidationFocalstackLoader, getValidationStackedLFLoader
 from lfmodels import LFDispNet as DispNetS
 from lfmodels import LFPoseNet as PoseNet
 from utils import load_config
+import sys
 
 parser = argparse.ArgumentParser()
 parser.add_argument("--config", required=True, type=str, help="Pkl file containing training configuration")
@@ -41,31 +41,18 @@ def main():
         custom_transforms.Normalize(mean=0.5, std=0.5)
     ])
 
-    # Preserve compatibility with old config.pkl files.
-    # Old ones labelled config.focalstack as either True or False
-    # New models don't have the 'focalstack' field, instead they have lfformat=[focalstack/stack]
-    try:
-        if config.lfformat == 'focalstack':
-            dataset = getValidationFocalstackLoader(config, args.seq, transform, shuffle=False)
-            print("Loading images as focalstack")
-        elif config.lfformat == 'stack':
-            dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
-            print("Loading images as stack")
+    if config.lfformat == 'focalstack':
+        dataset = getValidationFocalstackLoader(config, args.seq, transform, shuffle=False)
+        print("Loading images as focalstack")
+    elif config.lfformat == 'stack':
+        dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
+        print("Loading images as stack")
 
-    except AttributeError:
-        if ('focalstack' not in config):
-            dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
-            print("Loading images as stack")
-        elif config.focalstack:
-            dataset = getValidationFocalstackLoader(config, args.seq, transform, shuffle=False)
-            print("Loading images as focalstack")
-        else:
-            dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
-            print("Loading images as stack")
+    input_channels = dataset[0]['tgt_lf_formatted'].shape[0]
+    output_channels = len(config.cameras)
+    print(f"Using {input_channels} input channels, {output_channels} output channels")
 
-    input_channels = dataset[0][1].shape[0]
-
-    disp_net = DispNetS(in_channels=input_channels).to(device)
+    disp_net = DispNetS(in_channels=input_channels, out_channels=output_channels).to(device)
     weights = torch.load(config.dispnet)
     disp_net.load_state_dict(weights['state_dict'])
     disp_net.eval()
@@ -75,14 +62,15 @@ def main():
     pose_net.load_state_dict(weights['state_dict'])
     pose_net.eval()
 
-    for i, (tgt, tgt_lf, ref, ref_lf, k, kinv, pose_gt) in enumerate(dataset):
+    print("Loaded dispnet and posenet")
+
+    for i, validData in enumerate(dataset):
         print("{:03d}/{:03d}".format(i + 1, len(dataset)), end="\r")
-        tgt = tgt.unsqueeze(0).to(device)
-        ref = [r.unsqueeze(0).to(device) for r in ref]
-        tgt_lf = tgt_lf.unsqueeze(0).to(device)
-        ref_lf = [r.unsqueeze(0).to(device) for r in ref_lf]
-        output = disp_net(tgt_lf)
-        exp, pose = pose_net(tgt_lf, ref_lf)
+        tgt = validData['tgt_lf_formatted'].unsqueeze(0).to(device)
+        ref = [r.unsqueeze(0).to(device) for r in validData['ref_lfs_formatted']]
+
+        output = disp_net(tgt)
+        exp, pose = pose_net(tgt, ref)
 
         outdir = os.path.join(output_dir, "{:06d}.png".format(i))
         plt.imsave(outdir, output.cpu().numpy()[0, 0, :, :])
