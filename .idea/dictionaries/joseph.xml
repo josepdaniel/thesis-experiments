@@ -8,6 +8,9 @@
       <w>demi</w>
       <w>disp</w>
       <w>dispnet</w>
+      <w>explainabilty</w>
+      <w>expnet</w>
+      <w>exppose</w>
       <w>focalstack</w>
       <w>focalstacks</w>
       <w>imgs</w>
@@ -15,10 +18,15 @@
       <w>lightfield</w>
       <w>linalg</w>
       <w>multiplane</w>
+      <w>multiwarp</w>
+      <w>odometry</w>
       <w>optim</w>
       <w>outdir</w>
       <w>posenet</w>
+      <w>pretrained</w>
+      <w>quat</w>
       <w>rotm</w>
+      <w>subparser</w>
       <w>trainingdata</w>
       <w>warper</w>
     </words>
