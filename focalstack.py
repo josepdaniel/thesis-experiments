@@ -5,6 +5,7 @@ from imageio import imread
 
 
 def load_as_float(path, gray):
+    print("WARNING focalstack.load_as_float IS DEPRECATED")
     im = imread(path).astype(np.float32)
     if gray:
         im = cv2.cvtColor(im, cv2.COLOR_RGB2GRAY)
@@ -12,6 +13,7 @@ def load_as_float(path, gray):
 
 
 def load_lightfield(path, cameras, gray):
+    print("WARNING focalstack.load_lightfield IS DEPRECATED")
     imgs = []
     for cam in cameras:
         img_path = path.replace('/8/', '/{}/'.format(cam))
@@ -20,6 +22,7 @@ def load_lightfield(path, cameras, gray):
 
 
 def shift_sum(lf, shift, dof, gray):
+    print("WARNING focalstack.shift_sum IS DEPRECATED")
     if type(lf) is list:
         lf = np.array(lf)
     assert (lf.shape[0] == 17)
@@ -75,6 +78,7 @@ def shift_sum(lf, shift, dof, gray):
 
 
 def load_multiplane_focalstack(path, numPlanes, numCameras, gray):
+    print("WARNING focalstack.load_multiplane_focalstack is DEPRECATED")
     assert numCameras in [5, 9, 13, 17]
     assert numPlanes in [9, 7, 5, 3]
 
@@ -96,11 +100,3 @@ def load_multiplane_focalstack(path, numPlanes, numCameras, gray):
     return stacks
 
 
-# Demo of how to use shiftsum
-if __name__ == "__main__":
-    lf1 = load_multiplane_focalstack(
-        "/home/joseph/Documents/thesis/epidata/module-1-1/module1-1-png/seq2/8/0000000030.png", numPlanes=9,
-        numCameras=17, gray=False)
-
-    plt.imshow(lf[8])
-    plt.show()

@@ -1,6 +1,6 @@
 import sys 
 
-from multiwarp_dataloader import getFocalstackLoaders, getStackedLFLoaders
+from multiwarp_dataloader import getFocalstackLoaders, getStackedLFLoaders, getEpiLoaders
 from parser import parseMultiwarpTrainingArgs
 import time
 import csv
@@ -45,6 +45,9 @@ def main():
         train_set, val_set = getFocalstackLoaders(args, train_transform, valid_transform)
     elif args.lfformat == 'stack':
         train_set, val_set = getStackedLFLoaders(args, train_transform, valid_transform)
+    elif args.lfformat == 'epi':
+        train_set, val_set = getEpiLoaders(args, train_transform, valid_transform)
+
 
     print('=> {} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
     print('=> {} samples found in {} validation scenes'.format(len(val_set), len(val_set.scenes)))
@@ -54,7 +57,7 @@ def main():
     # Create batch loader
     train_loader = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
-    
+
     # Pull first example from dataset to check number of channels
     input_channels = train_set[0]['tgt_lf_formatted'].shape[0]   
     output_channels = len(args.cameras)
@@ -64,7 +67,13 @@ def main():
 
     # create model
     print("=> Creating models")
-    disp_net = models.LFDispNet(in_channels=input_channels, out_channels=output_channels).to(device)
+
+    if args.lfformat == "epi":
+        print("=> Using epipolar plane image dispnet")
+        disp_net = models.EPIDispNet(input_channels).to(device)
+    else:
+        disp_net = models.LFDispNet(in_channels=input_channels, out_channels=output_channels).to(device)
+
     output_exp = args.mask_loss_weight > 0
     pose_exp_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1, output_exp=args.mask_loss_weight > 0).to(device)
 
@@ -125,7 +134,6 @@ def main():
         for error, name in zip(errors, error_names):
             tb_writer.add_scalar(name, error, epoch)
 
-        # Up to you to chose the most relevant error to measure your model's performance, careful some measures are to maximize (such as a1,a2,a3)
         decisive_error = errors[1]
         if best_error < 0:
             best_error = decisive_error
@@ -184,7 +192,7 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
         loss_1, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
-        
+
         if w2 > 0:
             loss_2 = explainability_loss(explainability_mask)
         else:
@@ -203,7 +211,8 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
             tb_writer.add_scalar('train/total_loss', loss.item(), n_iter)
             tb_writer.add_scalar('train/pose_loss', pose_loss.item(), n_iter)
         if log_output:
-            vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, 192, 256) * 0.5 + 0.5
+            b, n, h, w = tgt_lf_formatted.shape
+            vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
             vis_depth = tensor2array(depth[0][0, 0, :, :], colormap='magma')
             vis_disp = tensor2array(disparities[0][0, 0, :, :], colormap='magma')
             tb_writer.add_image('train/input', vis_img, n_iter)
@@ -284,7 +293,8 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
         pose_loss = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
 
         if log_outputs and i < sample_nb_to_log - 1:  # log first output of first batches
-            vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, 192, 256) * 0.5 + 0.5
+            b, n, h, w = tgt_lf_formatted.shape
+            vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
             vis_depth = tensor2array(depth[0, 0, :, :], colormap='magma')
             vis_disp = tensor2array(disp[0, 0, :, :], colormap='magma')
 
@@ -302,17 +312,7 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
         logger.valid_bar.update(i+1)
         if i % args.print_freq == 0:
             logger.valid_writer.write('valid: Time {} Loss {}'.format(batch_time, losses))
-    
-    # if log_outputs:
-        # prefix = 'valid poses'
-        # coeffs_names = ['tx', 'ty', 'tz']
-        # if args.rotation_mode == 'euler':
-            # coeffs_names.extend(['rx', 'ry', 'rz'])
-        # elif args.rotation_mode == 'quat':
-            # coeffs_names.extend(['qx', 'qy', 'qz'])
-        # for i in range(poses.shape[1]):
-            # tb_writer.add_histogram('{} {}'.format(prefix, coeffs_names[i]), poses[:,i], epoch)
-        # tb_writer.add_histogram('disp_values', disp_values, epoch)
+
     logger.valid_bar.update(len(val_loader))
     return losses.avg, ['val/total_loss', 'val/photometric_error', 'val/explainability_loss']
 

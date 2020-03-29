@@ -9,7 +9,7 @@ from imageio import imread
 from path import Path
 
 from custom_transforms import get_relative_6dof
-from focalstack import load_multiplane_focalstack
+from epimodule import load_multiplane_focalstack
 
 
 def load_as_float(path, gray):

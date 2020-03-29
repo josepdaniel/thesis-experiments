@@ -3,6 +3,7 @@
     <words>
       <w>axang</w>
       <w>billinear</w>
+      <w>conv</w>
       <w>cuda</w>
       <w>demi</w>
       <w>disp</w>
@@ -12,11 +13,13 @@
       <w>imgs</w>
       <w>lfformat</w>
       <w>lightfield</w>
+      <w>linalg</w>
       <w>multiplane</w>
       <w>optim</w>
       <w>outdir</w>
       <w>posenet</w>
       <w>rotm</w>
+      <w>trainingdata</w>
       <w>warper</w>
     </words>
   </dictionary>
