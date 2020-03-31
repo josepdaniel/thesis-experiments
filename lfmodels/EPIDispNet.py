@@ -65,10 +65,6 @@ class EPIDispNet(nn.Module):
 
         self.upconv3 = conv(upconv_planes[1], upconv_planes[2])
         self.iconv3 = conv(upconv_planes[2] + conv_planes[1], upconv_planes[2])
-        # self.predict_disp_halfsize = nn.Sequential(
-        #     conv(upconv_planes[2], in_channels//2),
-        #     upconv(in_channels//2, in_channels//2)
-        # )
 
         self.upconv4 = upconv(upconv_planes[2], upconv_planes[3])
         self.iconv4 = conv(upconv_planes[3] + conv_planes[0], upconv_planes[3])
@@ -108,13 +104,7 @@ class EPIDispNet(nn.Module):
         return disp_full
 
     def forward(self, x):
-        """
-        Expects first 8 rows (batch[:, :, :8, :]) to be horizontal epi, next
-        8 rows should be vertical epi
-        """
-        disp_horizontal = self.predict_disp(x[:, :, :8, :]).permute([0, 2, 1, 3])
-        disp_vertical = self.predict_disp(x[:, :, 8:, :]).permute([0, 2, 3, 1])
-        disp = torch.mean(torch.stack((disp_horizontal, disp_vertical)), 0)
+        disp = self.predict_disp(x).permute([0, 2, 1, 3])
         if self.training:
             return [disp]
         else:
@@ -122,5 +112,7 @@ class EPIDispNet(nn.Module):
 
 if __name__ == "__main__":
     net = EPIDispNet(128)
-    horizontal = torch.rand(4, 128, 16, 128)
+    net.eval()
+    horizontal = torch.rand(4, 128, 8, 128)
     y = net(horizontal)
+    print(y.shape)

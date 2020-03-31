@@ -7,22 +7,41 @@ import os
 from custom_transforms import get_relative_6dof
 
 
+# DEFAULT_PATCH_SIZE = (160, 224)
+DEFAULT_PATCH_SIZE = None  # TODO: Revert this
 CAMERA_SPACING = 0.04
+
+# These are the *rough* intrinsic parameters for the cameras on the EPI module.
+# They are modified from the calibrated parameters because the images have been down-sampled and center-cropped
+# EPI_INTRINSICS_MATRIX = np.array([
+#     [197.68828,     0,              DEFAULT_PATCH_SIZE[1]/2],
+#     [0,             197.68828,      DEFAULT_PATCH_SIZE[0]/2],
+#     [0,             0,              1]
+# ]).astype(np.float32)
+EPI_INTRINSICS_MATRIX = None
 
 
 def load_as_float(path, gray, patch_size=None):
     im = imread(path).astype(np.float32)
+
+    assert (type(patch_size) in [int, list, tuple]) or (patch_size is None)
+
+    if isinstance(patch_size, int):
+        patch_size = (patch_size, patch_size)
+    elif type(patch_size) in [list, tuple]:
+        assert len(patch_size) == 2
+
     if patch_size:
         h, w = im.shape[0:2]
-        x_min = math.floor(w / 2 - patch_size / 2)
-        y_min = math.floor(h / 2 - patch_size / 2)
-        im = im[y_min:y_min+patch_size, x_min:x_min+patch_size, :]
+        x_min = math.floor(w / 2 - patch_size[1] / 2)
+        y_min = math.floor(h / 2 - patch_size[0] / 2)
+        im = im[y_min:y_min+patch_size[0], x_min:x_min+patch_size[1], :]
     if gray:
         im = cv2.cvtColor(im, cv2.COLOR_RGB2GRAY)
     return im
 
 
-def load_lightfield(path, cameras, gray, patch_size=None):
+def load_lightfield(path, cameras, gray, patch_size=DEFAULT_PATCH_SIZE):
     imgs = []
     for cam in cameras:
         img_path = path.replace('/8/', '/{}/'.format(cam))
@@ -281,15 +300,5 @@ def load_epi_polar_plane_image(path, patch_size):
     epi = np.concatenate([horizontal, vertical], 0)
     return epi
 
-
-# Demo of how to use shiftsum
-if __name__ == "__main__":
-    import matplotlib.pyplot as plt
-    lf1 = load_multiplane_focalstack(
-        "/home/joseph/Documents/thesis/epidata/module-1-1/module1-1-png/seq2/8/0000000030.png", numPlanes=9,
-        numCameras=9, gray=False)
-
-    plt.imshow(lf1[8])
-    plt.show()
 
 

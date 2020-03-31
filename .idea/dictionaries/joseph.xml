@@ -4,15 +4,20 @@
       <w>axang</w>
       <w>billinear</w>
       <w>conv</w>
+      <w>csvfile</w>
       <w>cuda</w>
+      <w>cudnn</w>
       <w>demi</w>
       <w>disp</w>
       <w>dispnet</w>
+      <w>epipolar</w>
+      <w>explainability</w>
       <w>explainabilty</w>
       <w>expnet</w>
       <w>exppose</w>
       <w>focalstack</w>
       <w>focalstacks</w>
+      <w>iconv</w>
       <w>imgs</w>
       <w>lfformat</w>
       <w>lightfield</w>
@@ -28,6 +33,8 @@
       <w>rotm</w>
       <w>subparser</w>
       <w>trainingdata</w>
+      <w>upconv</w>
+      <w>validdata</w>
       <w>warper</w>
     </words>
   </dictionary>

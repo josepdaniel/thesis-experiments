@@ -1,5 +1,3 @@
-import sys 
-
 from multiwarp_dataloader import getFocalstackLoaders, getStackedLFLoaders, getEpiLoaders
 from parser import parseMultiwarpTrainingArgs
 import time
@@ -11,8 +9,8 @@ import torch.utils.data
 import custom_transforms
 import lfmodels as models
 
-from utils import tensor2array, save_checkpoint, make_save_path, log_output_tensorboard, dump_config
-from loss_functions import multiwarp_photometric_loss, explainability_loss, smooth_loss, compute_errors
+from utils import tensor2array, save_checkpoint, make_save_path, dump_config
+from loss_functions import multiwarp_photometric_loss, explainability_loss, smooth_loss
 from logger import TermLogger, AverageMeter
 from tensorboardX import SummaryWriter
 
@@ -48,18 +46,19 @@ def main():
     elif args.lfformat == 'epi':
         train_set, val_set = getEpiLoaders(args, train_transform, valid_transform)
 
-
     print('=> {} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
     print('=> {} samples found in {} validation scenes'.format(len(val_set), len(val_set.scenes)))
 
     print('=> Multi-warp training, warping {} sub-apertures'.format(len(args.cameras)))
 
     # Create batch loader
-    train_loader = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True, num_workers=args.workers, pin_memory=True)
-    val_loader = torch.utils.data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
+    train_loader = torch.utils.data.DataLoader(train_set, batch_size=args.batch_size, shuffle=True,
+                                               num_workers=args.workers, pin_memory=True)
+    val_loader = torch.utils.data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False,
+                                             num_workers=args.workers, pin_memory=True)
 
     # Pull first example from dataset to check number of channels
-    input_channels = train_set[0]['tgt_lf_formatted'].shape[0]   
+    input_channels = train_set[0]['tgt_lf_formatted'].shape[0]
     output_channels = len(args.cameras)
     args.epoch_size = len(train_loader)
     print("=> [DispNet] Using {} input channels, {} output channels".format(input_channels, output_channels))
@@ -74,8 +73,8 @@ def main():
     else:
         disp_net = models.LFDispNet(in_channels=input_channels, out_channels=output_channels).to(device)
 
-    output_exp = args.mask_loss_weight > 0
-    pose_exp_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1, output_exp=args.mask_loss_weight > 0).to(device)
+    pose_exp_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1,
+                                    output_exp=args.mask_loss_weight > 0).to(device)
 
     if args.pretrained_exp_pose:
         print("=> [PoseNet] Using pre-trained weights for pose net")
@@ -100,21 +99,22 @@ def main():
     print('=> Setting adam solver')
 
     optim_params = [
-        {'params': disp_net.parameters(), 'lr': args.lr}, 
+        {'params': disp_net.parameters(), 'lr': args.lr},
         {'params': pose_exp_net.parameters(), 'lr': args.lr}
     ]
 
     optimizer = torch.optim.Adam(optim_params, betas=(args.momentum, args.beta), weight_decay=args.weight_decay)
 
-    with open(save_path/args.log_summary, 'w') as csvfile:
+    with open(save_path / args.log_summary, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter='\t')
         writer.writerow(['train_loss', 'validation_loss'])
 
-    with open(save_path/args.log_full, 'w') as csvfile:
+    with open(save_path / args.log_full, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter='\t')
         writer.writerow(['train_loss', 'photo_loss', 'explainability_loss', 'smooth_loss'])
 
-    logger = TermLogger(n_epochs=args.epochs, train_size=min(len(train_loader), args.epoch_size), valid_size=len(val_loader))
+    logger = TermLogger(n_epochs=args.epochs, train_size=min(len(train_loader), args.epoch_size),
+                        valid_size=len(val_loader))
     logger.epoch_bar.start()
 
     for epoch in range(args.epochs):
@@ -142,14 +142,14 @@ def main():
         is_best = decisive_error < best_error
         best_error = min(best_error, decisive_error)
         save_checkpoint(save_path, {
-                'epoch': epoch + 1,
-                'state_dict': disp_net.module.state_dict()
-            }, {
-                'epoch': epoch + 1,
-                'state_dict': pose_exp_net.module.state_dict()
-            }, is_best)
+            'epoch': epoch + 1,
+            'state_dict': disp_net.module.state_dict()
+        }, {
+                            'epoch': epoch + 1,
+                            'state_dict': pose_exp_net.module.state_dict()
+                        }, is_best)
 
-        with open(save_path/args.log_summary, 'a') as csvfile:
+        with open(save_path / args.log_summary, 'a') as csvfile:
             writer = csv.writer(csvfile, delimiter='\t')
             writer.writerow([train_loss, decisive_error])
     logger.epoch_bar.finish()
@@ -185,7 +185,7 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
 
         # compute output
         disparities = disp_net(tgt_lf_formatted)
-        depth = [1/disp for disp in disparities]
+        depth = [1 / disp for disp in disparities]
 
         explainability_mask, pose = pose_exp_net(tgt_lf_formatted, ref_lfs_formatted)
 
@@ -199,11 +199,11 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
             loss_2 = 0
         loss_3 = smooth_loss(depth)
 
-        pred_pose_magnitude = pose[:,:,:3].norm(dim=2)
-        pose_gt_magnitude = pose_gt[:,:,:3].norm(dim=2)
+        pred_pose_magnitude = pose[:, :, :3].norm(dim=2)
+        pose_gt_magnitude = pose_gt[:, :, :3].norm(dim=2)
         pose_loss = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
 
-        loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss
+        loss = w1 * loss_1 + w2 * loss_2 + w3 * loss_3 + w4 * pose_loss
 
         if log_losses:
             tb_writer.add_scalar('train/photometric_error', loss_1.item(), n_iter)
@@ -218,7 +218,6 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
             tb_writer.add_image('train/input', vis_img, n_iter)
             tb_writer.add_image('train/depth', vis_depth, n_iter)
             tb_writer.add_image('train/disp', vis_disp, n_iter)
-           
 
         # record loss and EPE
         losses.update(loss.item(), args.batch_size)
@@ -232,10 +231,10 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
         batch_time.update(time.time() - end)
         end = time.time()
 
-        with open(args.save_path/args.log_full, 'a') as csvfile:
+        with open(args.save_path / args.log_full, 'a') as csvfile:
             writer = csv.writer(csvfile, delimiter='\t')
             writer.writerow([loss.item(), loss_1.item(), loss_2.item() if w2 > 0 else 0, loss_3.item()])
-        logger.train_bar.update(i+1)
+        logger.train_bar.update(i + 1)
         if i % args.print_freq == 0:
             logger.train_writer.write('Train: Time {} Data {} Loss {}'.format(batch_time, data_time, losses))
         if i >= epoch_size - 1:
@@ -268,13 +267,12 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
         tgt_lf_formatted = validdata['tgt_lf_formatted'].to(device)
         ref_lfs_formatted = [lf.to(device) for lf in validdata['ref_lfs_formatted']]
         intrinsics = validdata['intrinsics'].to(device)
-        intrinsics_inv = validdata['intrinsics_inv'].to(device)
         pose_gt = validdata['pose_gt'].to(device)
         metadata = validdata['metadata']
 
         # compute output
         disp = disp_net(tgt_lf_formatted)
-        depth = 1/disp
+        depth = 1 / disp
         explainability_mask, pose = pose_exp_net(tgt_lf_formatted, ref_lfs_formatted)
 
         loss_1, warped, diff = multiwarp_photometric_loss(
@@ -288,8 +286,8 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
             loss_2 = 0
         loss_3 = smooth_loss(depth).item()
 
-        pred_pose_magnitude = pose[:,:,:3].norm(dim=2)
-        pose_gt_magnitude = pose_gt[:,:,:3].norm(dim=2)
+        pred_pose_magnitude = pose[:, :, :3].norm(dim=2)
+        pose_gt_magnitude = pose_gt[:, :, :3].norm(dim=2)
         pose_loss = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
 
         if log_outputs and i < sample_nb_to_log - 1:  # log first output of first batches
@@ -302,14 +300,13 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
             tb_writer.add_image('val/disp', vis_disp, n_iter)
             tb_writer.add_image('val/depth', vis_depth, n_iter)
 
-
-        loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss
+        loss = w1 * loss_1 + w2 * loss_2 + w3 * loss_3 + w4 * pose_loss
         losses.update([loss, loss_1, loss_2])
 
         # measure elapsed time
         batch_time.update(time.time() - end)
         end = time.time()
-        logger.valid_bar.update(i+1)
+        logger.valid_bar.update(i + 1)
         if i % args.print_freq == 0:
             logger.valid_writer.write('valid: Time {} Loss {}'.format(batch_time, losses))
 
