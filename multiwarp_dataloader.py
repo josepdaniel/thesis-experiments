@@ -28,57 +28,34 @@ class MetaData:
         return self.metadata
 
 
-class FocalstackLoader(data.Dataset):
+class BaseDataset(data.Dataset):
     """
-    Arguments:
-        root:                   directory where data is
-        cameras:                list of cameras to build lf with
-        fs_num_cameras:         num of cameras to build focal stack with
-        fs_num_planes:          how many planes to focus on (one img per plane, stacked on colour channel)
-        gray:                   gray
-        seed:                   random seed
-        train:                  is training dataset
-        sequence_length:        sequence length (min 3)
-        transform:              deterministic transforms (e.g. normalize, resize, toTensor)
-        shuffle:                shuffle dataset
-        sequence:               select one sequence, else all detected sequences are used
-        random_horizontal_flip: flip all returned lfs horizontally at random
-        intrinsics_file:        location of intrinsics file, default = './intrinsics.txt'
-
-    Returns:
-        tgt_lf:                 used by billinear interpolator to warp camera-wise
-        ref_lfs:                used by billinear interpolator to warp camera-wise
-        tgt_focalstack:         seen by depth and pose networks
-        ref_focalstacks:        seen by depth and pose networks
-        intrinsics:             used by photometric warper
-        intrinsics_inv:         used by photometric warper
-        pose:                   centerCam to centerCam pose, used for evaluation
+    Base class for loading epi-module data-sets. Takes care of crawling the root directory and storing some common
+    configuration parameters.
     """
 
-    def __init__(self, root, cameras, fs_num_cameras, fs_num_planes, gray=False, seed=None, train=True,
-                 sequence_length=3,
-                 transform=None, shuffle=True, sequence=None, random_horizontal_flip=False,
-                 intrinsics_file="./intrinsics.txt",
-                 ):
-
+    def __init__(self, root, cameras, gray, seed, train, sequence_length, transform, shuffle, sequence, intrinsics):
         np.random.seed(seed)
         random.seed(seed)
 
+        self.samples = None
         self.cameras = cameras
-        self.numCameras = fs_num_cameras
-        self.numPlanes = fs_num_planes
         self.gray = gray
         self.root = Path(root)
         self.shuffle = shuffle
         self.transform = transform
-        self.intrinsics_file = intrinsics_file
+        self.intrinsics_file = intrinsics   # TODO: Revert this
 
-        scene_list_path = self.root / 'train.txt' if train else self.root / 'val.txt'
+        if train:
+            scene_list_path = self.root / 'train.txt'
+        else:
+            scene_list_path = self.root / 'val.txt'
 
         if sequence is not None:
-            self.scenes = [self.root / sequence / "8"]
+            self.scenes = [self.root / sequence / '8']
         else:
-            self.scenes = [self.root / folder[:].rstrip() / "8" for folder in open(scene_list_path)]
+            self.scenes = [self.root / folder[:].rstrip() / '8' for folder in open(scene_list_path)]
+
         self.crawl_folders(sequence_length)
 
     def crawl_folders(self, sequence_length):
@@ -87,12 +64,12 @@ class FocalstackLoader(data.Dataset):
         shifts = list(range(-demi_length, demi_length + 1))
         shifts.pop(demi_length)
         for scene in self.scenes:
-            intrinsics = np.genfromtxt(self.intrinsics_file).astype(np.float32).reshape((3, 3))
+            intrinsics = np.genfromtxt(self.intrinsics_file).astype(np.float32).reshape((3, 3))  # TODO: Revert this
             imgs = sorted(scene.files('*.png'))
             if len(imgs) < sequence_length:
                 continue
             for i in range(demi_length, len(imgs) - demi_length):
-                sample = {'intrinsics': intrinsics, 'tgt': imgs[i], 'ref_imgs': []}
+                sample = {'intrinsics': intrinsics, 'tgt': imgs[i], 'ref_imgs': []}  # TODO: Revert this
                 for j in shifts:
                     sample['ref_imgs'].append(imgs[i + j])
                 sequence_set.append(sample)
@@ -100,6 +77,24 @@ class FocalstackLoader(data.Dataset):
             random.shuffle(sequence_set)
 
         self.samples = sequence_set
+
+    def __getitem__(self, i):
+        raise NotImplementedError
+
+    def __len__(self):
+        raise NotImplementedError
+
+
+class FocalstackLoader(BaseDataset):
+
+    def __init__(self, root, cameras, fs_num_cameras, fs_num_planes, gray=False, seed=None, train=True,
+                 sequence_length=3, transform=None, shuffle=True, sequence=None, intrinsics_file="./intrinsics.txt"):
+
+        super(FocalstackLoader, self).__init__(root, cameras, gray, seed, train, sequence_length, transform, shuffle,
+                                               sequence, intrinsics_file)
+
+        self.numCameras = fs_num_cameras
+        self.numPlanes = fs_num_planes
 
     def __getitem__(self, index):
         sample = self.samples[index]
@@ -148,71 +143,13 @@ class FocalstackLoader(data.Dataset):
         return len(self.samples)
 
 
-class StackedLFLoader(data.Dataset):
-    """
-    Arguments:
-        root:                   directory where data is
-        cameras:                list of cameras to build lf with
-        gray:                   gray
-        seed:                   random seed
-        train:                  is training dataset
-        sequence_length:        sequence length (min 3)
-        transform:              deterministic transforms (e.g. normalize, resize, toTensor)
-        shuffle:                shuffle dataset
-        sequence:               select one sequence, else all detected sequences are used
-        random_horizontal_flip: flip all returned lfs horizontally at random
-        intrinsics_file:        location of intrinsics file, default = './intrinsics.txt'
-
-    Returns:
-        tgt_lf:                 used by billinear interpolator to warp camera-wise
-        ref_lfs:                used by billinear interpolator to warp camera-wise
-        intrinsics:             used by photometric warper
-        intrinsics_inv:         used by photometric warper
-        pose:                   centerCam to centerCam pose, used for evaluation
-    """
+class StackedLFLoader(BaseDataset):
 
     def __init__(self, root, cameras, gray=False, seed=None, train=True, sequence_length=3,
-                 transform=None, shuffle=True, sequence=None, random_horizontal_flip=False,
-                 intrinsics_file="./intrinsics.txt",
-                 ):
+                 transform=None, shuffle=True, sequence=None, intrinsics_file="./intrinsics.txt"):
 
-        np.random.seed(seed)
-        random.seed(seed)
-
-        self.cameras = cameras
-        self.gray = gray
-        self.root = Path(root)
-        self.shuffle = shuffle
-        self.transform = transform
-        self.intrinsics_file = intrinsics_file
-
-        scene_list_path = self.root / 'train.txt' if train else self.root / 'val.txt'
-
-        if sequence is not None:
-            self.scenes = [self.root / sequence / "8"]
-        else:
-            self.scenes = [self.root / folder[:].rstrip() / "8" for folder in open(scene_list_path)]
-        self.crawl_folders(sequence_length)
-
-    def crawl_folders(self, sequence_length):
-        sequence_set = []
-        demi_length = (sequence_length - 1) // 2
-        shifts = list(range(-demi_length, demi_length + 1))
-        shifts.pop(demi_length)
-        for scene in self.scenes:
-            intrinsics = np.genfromtxt(self.intrinsics_file).astype(np.float32).reshape((3, 3))
-            imgs = sorted(scene.files('*.png'))
-            if len(imgs) < sequence_length:
-                continue
-            for i in range(demi_length, len(imgs) - demi_length):
-                sample = {'intrinsics': intrinsics, 'tgt': imgs[i], 'ref_imgs': []}
-                for j in shifts:
-                    sample['ref_imgs'].append(imgs[i + j])
-                sequence_set.append(sample)
-        if self.shuffle:
-            random.shuffle(sequence_set)
-
-        self.samples = sequence_set
+        super(StackedLFLoader, self).__init__(root, cameras, gray, seed, train, sequence_length, transform, shuffle,
+                                              sequence, intrinsics_file)
 
     def __getitem__(self, index):
         sample = self.samples[index]
