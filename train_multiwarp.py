@@ -186,8 +186,7 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
         disparities = disp_net(tgt_lf_formatted)
         depth = [1/disp for disp in disparities]
 
-        explainability_mask, pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
-
+        pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
         loss_1, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
@@ -269,7 +268,7 @@ def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_
         # compute output
         disp = disp_net(tgt_lf_formatted)
         depth = 1/disp
-        explainability_mask, pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
+        pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
 
         loss_1, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
