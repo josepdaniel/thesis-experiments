@@ -74,16 +74,15 @@ def main():
     else:
         disp_net = models.LFDispNet(in_channels=input_channels, out_channels=output_channels).to(device)
 
-    output_exp = args.mask_loss_weight > 0
-    pose_exp_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1, output_exp=args.mask_loss_weight > 0).to(device)
+    pose_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1).to(device)
 
     if args.pretrained_exp_pose:
         print("=> [PoseNet] Using pre-trained weights for pose net")
         weights = torch.load(args.pretrained_exp_pose)
-        pose_exp_net.load_state_dict(weights['state_dict'], strict=False)
+        pose_net.load_state_dict(weights['state_dict'], strict=False)
     else:
         print("=> [PoseNet] training from scratch")
-        pose_exp_net.init_weights()
+        pose_net.init_weights()
 
     if args.pretrained_disp:
         print("=> [DispNet] Using pre-trained weights for DispNet")
@@ -95,13 +94,13 @@ def main():
 
     cudnn.benchmark = True
     disp_net = torch.nn.DataParallel(disp_net)
-    pose_exp_net = torch.nn.DataParallel(pose_exp_net)
+    pose_net = torch.nn.DataParallel(pose_net)
 
     print('=> Setting adam solver')
 
     optim_params = [
         {'params': disp_net.parameters(), 'lr': args.lr}, 
-        {'params': pose_exp_net.parameters(), 'lr': args.lr}
+        {'params': pose_net.parameters(), 'lr': args.lr}
     ]
 
     optimizer = torch.optim.Adam(optim_params, betas=(args.momentum, args.beta), weight_decay=args.weight_decay)
@@ -122,12 +121,12 @@ def main():
 
         # train for one epoch
         logger.reset_train_bar()
-        train_loss = train(args, train_loader, disp_net, pose_exp_net, optimizer, args.epoch_size, logger, tb_writer)
+        train_loss = train(args, train_loader, disp_net, pose_net, optimizer, args.epoch_size, logger, tb_writer)
         logger.train_writer.write(' * Avg Loss : {:.3f}'.format(train_loss))
 
         # evaluate on validation set
         logger.reset_valid_bar()
-        errors, error_names = validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger, tb_writer)
+        errors, error_names = validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_writer)
         error_string = ', '.join('{} : {:.3f}'.format(name, error) for name, error in zip(error_names, errors))
         logger.valid_writer.write(' * Avg {}'.format(error_string))
 
@@ -146,7 +145,7 @@ def main():
                 'state_dict': disp_net.module.state_dict()
             }, {
                 'epoch': epoch + 1,
-                'state_dict': pose_exp_net.module.state_dict()
+                'state_dict': pose_net.module.state_dict()
             }, is_best)
 
         with open(save_path/args.log_summary, 'a') as csvfile:
@@ -155,7 +154,7 @@ def main():
     logger.epoch_bar.finish()
 
 
-def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, logger, tb_writer):
+def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger, tb_writer):
     global n_iter, device
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -164,7 +163,7 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
 
     # switch to train mode
     disp_net.train()
-    pose_exp_net.train()
+    pose_net.train()
 
     end = time.time()
     logger.train_bar.update(0)
@@ -187,16 +186,13 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
         disparities = disp_net(tgt_lf_formatted)
         depth = [1/disp for disp in disparities]
 
-        explainability_mask, pose = pose_exp_net(tgt_lf_formatted, ref_lfs_formatted)
+        explainability_mask, pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
 
         loss_1, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
 
-        if w2 > 0:
-            loss_2 = explainability_loss(explainability_mask)
-        else:
-            loss_2 = 0
+        loss_2 = 0
         loss_3 = smooth_loss(depth)
 
         pred_pose_magnitude = pose[:,:,:3].norm(dim=2)
@@ -218,7 +214,6 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
             tb_writer.add_image('train/input', vis_img, n_iter)
             tb_writer.add_image('train/depth', vis_depth, n_iter)
             tb_writer.add_image('train/disp', vis_disp, n_iter)
-           
 
         # record loss and EPE
         losses.update(loss.item(), args.batch_size)
@@ -247,7 +242,7 @@ def train(args, train_loader, disp_net, pose_exp_net, optimizer, epoch_size, log
 
 
 @torch.no_grad()
-def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger, tb_writer, sample_nb_to_log=2):
+def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_writer, sample_nb_to_log=2):
     global device
     batch_time = AverageMeter()
     losses = AverageMeter(i=3, precision=4)
@@ -258,7 +253,7 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
 
     # switch to evaluate mode
     disp_net.eval()
-    pose_exp_net.eval()
+    pose_net.eval()
 
     end = time.time()
     logger.valid_bar.update(0)
@@ -268,25 +263,21 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
         tgt_lf_formatted = validdata['tgt_lf_formatted'].to(device)
         ref_lfs_formatted = [lf.to(device) for lf in validdata['ref_lfs_formatted']]
         intrinsics = validdata['intrinsics'].to(device)
-        intrinsics_inv = validdata['intrinsics_inv'].to(device)
         pose_gt = validdata['pose_gt'].to(device)
         metadata = validdata['metadata']
 
         # compute output
         disp = disp_net(tgt_lf_formatted)
         depth = 1/disp
-        explainability_mask, pose = pose_exp_net(tgt_lf_formatted, ref_lfs_formatted)
+        explainability_mask, pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
 
         loss_1, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
 
-        loss_1 = loss_1.item()
-        if w2 > 0:
-            loss_2 = explainability_loss(explainability_mask).item()
-        else:
-            loss_2 = 0
-        loss_3 = smooth_loss(depth).item()
+        loss_1 = loss_1.item()                      # Photometric loss
+        loss_2 = 0                                  # Explainability loss (deprecated)
+        loss_3 = smooth_loss(depth).item()          # Smoothness loss
 
         pred_pose_magnitude = pose[:,:,:3].norm(dim=2)
         pose_gt_magnitude = pose_gt[:,:,:3].norm(dim=2)
@@ -301,7 +292,6 @@ def validate_without_gt(args, val_loader, disp_net, pose_exp_net, epoch, logger,
             tb_writer.add_image('val/target_image', vis_img, n_iter)
             tb_writer.add_image('val/disp', vis_disp, n_iter)
             tb_writer.add_image('val/depth', vis_depth, n_iter)
-
 
         loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss
         losses.update([loss, loss_1, loss_2])
