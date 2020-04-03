@@ -70,7 +70,7 @@ def main():
         ref = [r.unsqueeze(0).to(device) for r in validData['ref_lfs_formatted']]
 
         output = disp_net(tgt)
-        exp, pose = pose_net(tgt, ref)
+        pose = pose_net(tgt, ref)
 
         outdir = os.path.join(output_dir, "{:06d}.png".format(i))
         plt.imsave(outdir, output.cpu().numpy()[0, 0, :, :])

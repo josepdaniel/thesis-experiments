@@ -48,7 +48,6 @@ def main():
     elif args.lfformat == 'epi':
         train_set, val_set = getEpiLoaders(args, train_transform, valid_transform)
 
-
     print('=> {} samples found in {} train scenes'.format(len(train_set), len(train_set.scenes)))
     print('=> {} samples found in {} validation scenes'.format(len(val_set), len(val_set.scenes)))
 
@@ -187,24 +186,24 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
         depth = [1/disp for disp in disparities]
 
         pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
-        loss_1, warped, diff = multiwarp_photometric_loss(
+        photometric_error, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
 
-        loss_2 = 0
-        loss_3 = smooth_loss(depth)
+        explainability_error = 0
+        smoothness_error = smooth_loss(depth)
 
-        pred_pose_magnitude = pose[:,:,:3].norm(dim=2)
-        pose_gt_magnitude = pose_gt[:,:,:3].norm(dim=2)
-        pose_loss = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
+        pred_pose_magnitude = pose[:, :, :3].norm(dim=2)
+        pose_gt_magnitude = pose_gt[:, :, :3].norm(dim=2)
+        pose_error = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
 
-        loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss
+        loss = w1*photometric_error + w2*explainability_error + w3*smoothness_error + w4*pose_error
 
         if log_losses:
-            tb_writer.add_scalar('train/photometric_error', loss_1.item(), n_iter)
-            tb_writer.add_scalar('train/smoothness_loss', loss_3.item(), n_iter)
+            tb_writer.add_scalar('train/photometric_error', photometric_error.item(), n_iter)
+            tb_writer.add_scalar('train/smoothness_loss', smoothness_error.item(), n_iter)
             tb_writer.add_scalar('train/total_loss', loss.item(), n_iter)
-            tb_writer.add_scalar('train/pose_loss', pose_loss.item(), n_iter)
+            tb_writer.add_scalar('train/pose_loss', pose_error.item(), n_iter)
         if log_output:
             b, n, h, w = tgt_lf_formatted.shape
             vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
@@ -228,7 +227,7 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
 
         with open(args.save_path/args.log_full, 'a') as csvfile:
             writer = csv.writer(csvfile, delimiter='\t')
-            writer.writerow([loss.item(), loss_1.item(), loss_2.item() if w2 > 0 else 0, loss_3.item()])
+            writer.writerow([loss.item(), photometric_error.item(), explainability_error.item() if w2 > 0 else 0, smoothness_error.item()])
         logger.train_bar.update(i+1)
         if i % args.print_freq == 0:
             logger.train_writer.write('Train: Time {} Data {} Loss {}'.format(batch_time, data_time, losses))

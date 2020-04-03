@@ -6,7 +6,7 @@ final/multiwarp/focalstack/17-cams-7-planes \
 --num-planes 7 \
 -c  3 8 13 7 9 \
 --sequence-length 3 \
--b2 -s1.0 -m0.0 -g0.0 \
+-b2 -s0.3 -m0.0 -g0.0 \
 --epochs 300 \
 --log-output \
 --gray

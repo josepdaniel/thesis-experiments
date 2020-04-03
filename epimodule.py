@@ -8,21 +8,36 @@ from custom_transforms import get_relative_6dof
 
 
 CAMERA_SPACING = 0.04
+DEFAULT_PATCH_SIZE = (160, 224)
+DEFAULT_PATCH_INTRINSICS = np.array([
+    [197.68828,     0,              DEFAULT_PATCH_SIZE[1]/2],
+    [0,             197.68828,      DEFAULT_PATCH_SIZE[0]/2],
+    [0,             0,              1]
+]).astype(np.float32)
 
 
 def load_as_float(path, gray, patch_size=None):
     im = imread(path).astype(np.float32)
+
+    assert (type(patch_size) in [int, list, tuple]) or (patch_size is None)
+
+    if isinstance(patch_size, int):
+        patch_size = (patch_size, patch_size)
+    elif type(patch_size) in [list, tuple]:
+        assert len(patch_size) == 2
+
     if patch_size:
         h, w = im.shape[0:2]
-        x_min = math.floor(w / 2 - patch_size / 2)
-        y_min = math.floor(h / 2 - patch_size / 2)
-        im = im[y_min:y_min+patch_size, x_min:x_min+patch_size, :]
+        x_min = math.floor(w / 2 - patch_size[1] / 2)
+        y_min = math.floor(h / 2 - patch_size[0] / 2)
+        im = im[y_min:y_min+patch_size[0], x_min:x_min+patch_size[1], :]
+
     if gray:
         im = cv2.cvtColor(im, cv2.COLOR_RGB2GRAY)
     return im
 
 
-def load_lightfield(path, cameras, gray, patch_size=None):
+def load_lightfield(path, cameras, gray, patch_size=DEFAULT_PATCH_SIZE):
     imgs = []
     for cam in cameras:
         img_path = path.replace('/8/', '/{}/'.format(cam))
@@ -247,14 +262,9 @@ def load_multiplane_focalstack(path, numPlanes, numCameras, gray):
 
 def load_horizontal_epi_polar_plane_image(path, patch_size=None):
     horizontal_cameras = [5, 6, 7, 8, 9, 10, 11, 12]
-    lf = load_lightfield(path, gray=True, cameras=horizontal_cameras)
+    lf = load_lightfield(path, gray=True, cameras=horizontal_cameras, patch_size=patch_size)
     lf = np.array(lf)
     h, w = lf.shape[1:3]
-
-    if patch_size:
-        x_min = math.floor(w / 2 - patch_size / 2)
-        y_min = math.floor(h / 2 - patch_size / 2)
-        lf = lf[:, y_min:y_min+patch_size, x_min:x_min+patch_size]
 
     lf = lf.transpose([0, 2, 1])
     return lf
@@ -262,19 +272,22 @@ def load_horizontal_epi_polar_plane_image(path, patch_size=None):
 
 def load_vertical_epi_polar_plane_image(path, patch_size=None):
     vertical_cameras = [1, 2, 3, 8, 13, 14, 15, 16]
-    lf = load_lightfield(path, gray=True, cameras=vertical_cameras)
+    lf = load_lightfield(path, gray=True, cameras=vertical_cameras, patch_size=patch_size)
     lf = np.array(lf)
     h, w = lf.shape[1:3]
-
-    if patch_size:
-        x_min = math.floor(w / 2 - patch_size / 2)
-        y_min = math.floor(h / 2 - patch_size / 2)
-        lf = lf[:, y_min:y_min+patch_size, x_min:x_min+patch_size]
 
     return lf
 
 
-def load_epi_polar_plane_image(path, patch_size):
+def load_tiled_epi(path, patch_size):
+    """ Loads a tiled epipolar plane image (2D) """
+    vertical = load_vertical_epi_polar_plane_image(path, patch_size).transpose(2, 0, 1)
+    vertical = vertical.reshape(8*vertical.shape[0], vertical.shape[2], 1).transpose()
+    return vertical
+
+
+def load_stacked_epi(path, patch_size):
+    """ Loads an epipolar volume. Only works if the patch is a square. """
     assert isinstance(patch_size, int)
     horizontal = load_horizontal_epi_polar_plane_image(path, patch_size=patch_size)
     vertical = load_vertical_epi_polar_plane_image(path, patch_size=patch_size)
