@@ -19,11 +19,11 @@ class MetaData:
     """ Storage class for metadata that might be needed during evaluation"""
     def __init__(self, cameras, tgt_name, ref_names, gray, flipped):
         self.metadata = {
-            "cameras": cameras,
-            "tgt_name": tgt_name,
-            "ref_names": ref_names,
-            "gray": gray,
-            "flipped": flipped,
+            "cameras": cameras,                 # List of camera indices
+            "tgt_name": tgt_name,               # Filename
+            "ref_names": ref_names,             # Filenames
+            "gray": gray,                       # Is grayscale
+            "flipped": flipped,                 # Is flipped
         }
 
     def getAsDict(self):
@@ -38,14 +38,14 @@ class TrainingData:
     """
     def __init__(self, tgt, tgt_formatted, ref, ref_formatted, intrinsics, pose, metadata):
         self.training_data = {
-            "tgt_lf": tgt,
-            "ref_lfs": ref,
-            "tgt_lf_formatted": tgt_formatted,
-            "ref_lfs_formatted": ref_formatted,
-            "pose_gt": pose,
-            "metadata": metadata.getAsDict(),
-            "intrinsics": intrinsics,
-            "intrinsics_inv": np.linalg.inv(intrinsics),
+            "tgt_lf": tgt,                                      # Unprocessed grid of images
+            "ref_lfs": ref,                                     # List of unprocessed grids of images
+            "tgt_lf_formatted": tgt_formatted,                  # The lightfield as seen by neural nets
+            "ref_lfs_formatted": ref_formatted,                 # Ref lightfields as seen by neural nets
+            "pose_gt": pose,                                    # Ground truth pose between tgt and refs
+            "metadata": metadata.getAsDict(),                   # Metadata (not used for training but for eval)
+            "intrinsics": intrinsics,                           # Intrinsics K
+            "intrinsics_inv": np.linalg.inv(intrinsics),        # Intrinsics^-1 
         }
 
     def getAsDict(self):
@@ -195,8 +195,8 @@ class TiledEPILoader(BaseDataset):
         tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
         ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
 
-        tgt_epi = load_tiled_epi(sample['tgt'])
-        ref_epis = [load_tiled_epi(ref_img) for ref_img in sample['ref_imgs']]
+        tgt_epi = load_tiled_epi(sample['tgt'], patch_size=None)
+        ref_epis = [load_tiled_epi(ref_img, patch_size=None) for ref_img in sample['ref_imgs']]
 
         pose = torch.Tensor([load_relative_pose(sample['tgt'], ref) for ref in sample['ref_imgs']])
         intrinsics = np.copy(sample['intrinsics'])
@@ -204,11 +204,13 @@ class TiledEPILoader(BaseDataset):
         if self.transform is not None:
             tgt_lf, _ = self.transform(tgt_lf, np.zeros((3, 3)))
             ref_lfs = [self.transform(ref, np.zeros((3, 3)))[0] for ref in ref_lfs]
-            tgt_epi = self.transform(tgt_epi, np.zeros((3,3)))
-            ref_epis = [self.transform(ref_epi, np.zeros((3,3)))[0] for ref in ref_epis]
+            tgt_epi, _ = self.transform(tgt_epi, np.zeros((3,3)))
+            ref_epis = [self.transform(ref, np.zeros((3,3)))[0] for ref in ref_epis]
 
         tgt_lf = torch.cat(tuple(tgt_lf), 0)
         ref_lfs = [torch.cat(ref, 0) for ref in ref_lfs]
+        tgt_epi = torch.cat(tuple(tgt_epi), 0)
+        ref_epis = [torch.cat(ref, 0) for ref in ref_epis]
 
         metadata = MetaData(self.cameras, sample['tgt'], sample['ref_imgs'], self.gray, False)
         trainingdata = TrainingData(tgt_lf, tgt_epi, ref_lfs, ref_epis, intrinsics, pose, metadata)
@@ -219,7 +221,7 @@ class TiledEPILoader(BaseDataset):
     
 
 def getEpiLoaders(args, train_transform, valid_transform, shuffle=True):
-    train_set = EPILoader(
+    train_set = TiledEPILoader(
         args.data,
         cameras=args.cameras,
         gray=True,

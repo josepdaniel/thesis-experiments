@@ -121,8 +121,6 @@ def get_sub_cam_to_center_cam_translation(cameras, camera_spacing=CAMERA_SPACING
 
 
 def get_center_cam_to_sub_cam_translation(cameras, camera_spacing=CAMERA_SPACING):
-    # T = np.linalg.inv(get_sub_cam_to_center_cam_translation(cam, camera_spacing))
-    # return torch.Tensor(T)
     """Get the relative pose from the center sub-aperture to the chosen sub-aperture.
 
     Args:
