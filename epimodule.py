@@ -277,14 +277,14 @@ def load_vertical_epi_polar_plane_image(path, patch_size=None):
     return lf
 
 
-def load_tiled_epi(path, patch_size):
+def load_tiled_epi(path, patch_size=DEFAULT_PATCH_SIZE):
     """ Loads a tiled epipolar plane image (2D) """
     vertical = load_vertical_epi_polar_plane_image(path, patch_size).transpose(2, 0, 1)
     vertical = vertical.reshape(8*vertical.shape[0], vertical.shape[2], 1).transpose()
     return vertical
 
 
-def load_stacked_epi(path, patch_size):
+def load_stacked_epi(path, patch_size=DEFAULT_PATCH_SIZE):
     """ Loads an epipolar volume. Only works if the patch is a square. """
     assert isinstance(patch_size, int)
     horizontal = load_horizontal_epi_polar_plane_image(path, patch_size=patch_size)

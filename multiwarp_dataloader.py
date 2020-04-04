@@ -195,8 +195,8 @@ class TiledEPILoader(BaseDataset):
         tgt_lf = load_lightfield(sample['tgt'], self.cameras, self.gray)
         ref_lfs = [load_lightfield(ref_img, self.cameras, self.gray) for ref_img in sample['ref_imgs']]
 
-        tgt_epi = load_tiled_epi(sample['tgt'], patch_size=None)
-        ref_epis = [load_tiled_epi(ref_img, patch_size=None) for ref_img in sample['ref_imgs']]
+        tgt_epi = load_tiled_epi(sample['tgt'])
+        ref_epis = [load_tiled_epi(ref_img) for ref_img in sample['ref_imgs']]
 
         pose = torch.Tensor([load_relative_pose(sample['tgt'], ref) for ref in sample['ref_imgs']])
         intrinsics = np.copy(sample['intrinsics'])
@@ -232,7 +232,7 @@ def getEpiLoaders(args, train_transform, valid_transform, shuffle=True):
         shuffle=shuffle,
     )
 
-    val_set = EPILoader(
+    val_set = TiledEPILoader(
         args.data,
         cameras=args.cameras,
         gray=True,

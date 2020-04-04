@@ -41,11 +41,13 @@ def crop_like(input, ref):
 
 class LFDispNet(nn.Module):
 
-    def __init__(self, in_channels=3, out_channels=1, alpha=10, beta=0.01):
+    def __init__(self, in_channels=3, out_channels=1, alpha=10, beta=0.01, encoder=None):
         super(LFDispNet, self).__init__()
 
         self.alpha = alpha
         self.beta = beta
+
+        self.encoder = encoder
 
         conv_planes = [32, 64, 128, 256, 512, 512, 512]
         self.conv1 = downsample_conv(in_channels,    conv_planes[0], kernel_size=7)
@@ -84,6 +86,12 @@ class LFDispNet(nn.Module):
                 xavier_uniform_(m.weight)
                 if m.bias is not None:
                     zeros_(m.bias)
+
+    def encode(self, formatted, unformatted):
+        return self.encoder(formatted, unformatted)
+
+    def hasEncoder(self):
+        return self.encoder is not None
 
     def forward(self, x):
         out_conv1 = self.conv1(x)

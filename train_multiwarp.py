@@ -24,7 +24,7 @@ device = torch.device("cuda") if torch.cuda.is_available() else torch.device("cp
 def main():
     global best_error, n_iter, device
     args = parseMultiwarpTrainingArgs()
-    args.training_output_freq = 100
+    args.training_output_freq = 100; args.tilesize=8                # Some non-optional parameters for training
     save_path = make_save_path(args)
     args.save_path = save_path
     dump_config(save_path, args)
@@ -58,22 +58,25 @@ def main():
     val_loader = torch.utils.data.DataLoader(val_set, batch_size=args.batch_size, shuffle=False, num_workers=args.workers, pin_memory=True)
 
     # Pull first example from dataset to check number of channels
-    input_channels = train_set[0]['tgt_lf_formatted'].shape[0]   
+    dispnet_input_channels = posenet_input_channels = train_set[0]['tgt_lf_formatted'].shape[0]   
     output_channels = len(args.cameras)
     args.epoch_size = len(train_loader)
-    print("=> [DispNet] Using {} input channels, {} output channels".format(input_channels, output_channels))
-    print("=> [PoseNet] Using {} input channels".format(input_channels))
-
-    # create model
+    
+    # Create models
     print("=> Creating models")
 
     if args.lfformat == "epi":
-        print("=> Using epipolar plane image dispnet")
-        disp_net = models.EPIDispNet(input_channels).to(device)
+        print("=> Using EPI encoders")
+        disp_encoder = models.EpiEncoder('vertical', args.tilesize).to(device)
+        dispnet_input_channels = 16 + len(args.cameras)
     else:
-        disp_net = models.LFDispNet(in_channels=input_channels, out_channels=output_channels).to(device)
+        disp_encoder = None; pose_encoder = None
+    
+    disp_net = models.LFDispNet(in_channels=dispnet_input_channels, out_channels=output_channels, encoder=disp_encoder).to(device)
+    pose_net = models.LFPoseNet(in_channels=posenet_input_channels, nb_ref_imgs=args.sequence_length - 1).to(device)
 
-    pose_net = models.LFPoseNet(in_channels=input_channels, nb_ref_imgs=args.sequence_length - 1).to(device)
+    print("=> [DispNet] Using {} input channels, {} output channels".format(dispnet_input_channels, output_channels))
+    print("=> [PoseNet] Using {} input channels".format(posenet_input_channels))
 
     if args.pretrained_exp_pose:
         print("=> [PoseNet] Using pre-trained weights for pose net")
@@ -92,8 +95,8 @@ def main():
         disp_net.init_weights()
 
     cudnn.benchmark = True
-    disp_net = torch.nn.DataParallel(disp_net)
-    pose_net = torch.nn.DataParallel(pose_net)
+    # disp_net = torch.nn.DataParallel(disp_net)
+    # pose_net = torch.nn.DataParallel(pose_net)
 
     print('=> Setting adam solver')
 
@@ -182,7 +185,12 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
         metadata = trainingdata['metadata']
 
         # compute output
-        disparities = disp_net(tgt_lf_formatted)
+        if disp_net.hasEncoder():
+            tgt_lf_encoded = disp_net.encode(tgt_lf_formatted, tgt_lf)
+        else:
+            tgt_lf_encoded = tgt_lf_formatted
+        
+        disparities = disp_net(tgt_lf_encoded)
         depth = [1/disp for disp in disparities]
 
         pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
@@ -207,9 +215,14 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
         if log_output:
             b, n, h, w = tgt_lf_formatted.shape
             vis_img = tgt_lf_formatted[0, 0, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
+            b, n, h, w = depth[0].shape
             vis_depth = tensor2array(depth[0][0, 0, :, :], colormap='magma')
             vis_disp = tensor2array(disparities[0][0, 0, :, :], colormap='magma')
+            vis_enc_f = tgt_lf_encoded[0, 0, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
+            vis_enc_b = tgt_lf_encoded[0, -1, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
             tb_writer.add_image('train/input', vis_img, n_iter)
+            tb_writer.add_image('train/encoded_front', vis_enc_f, n_iter)
+            tb_writer.add_image('train/encoded_back', vis_enc_b, n_iter)
             tb_writer.add_image('train/depth', vis_depth, n_iter)
             tb_writer.add_image('train/disp', vis_disp, n_iter)
 
@@ -264,8 +277,14 @@ def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_
         pose_gt = validdata['pose_gt'].to(device)
         metadata = validdata['metadata']
 
+        if disp_net.hasEncoder():
+            tgt_lf_encoded = disp_net.encode(tgt_lf_formatted, tgt_lf)
+        else:
+            tgt_lf_encoded = tgt_lf_formatted
+        disp = disp_net(tgt_lf_encoded)
+
         # compute output
-        disp = disp_net(tgt_lf_formatted)
+        # disp = disp_net(tgt_lf_formatted)
         depth = 1/disp
         pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
 
