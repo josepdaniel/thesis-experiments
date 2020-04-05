@@ -12,10 +12,11 @@ def conv(in_planes, out_planes, kernel_size=3):
 
 class LFPoseNet(nn.Module):
 
-    def __init__(self, in_channels=3, nb_ref_imgs=2, output_exp=False):
+    def __init__(self, in_channels=3, nb_ref_imgs=2, encoder=None):
         super(LFPoseNet, self).__init__()
         self.nb_ref_imgs = nb_ref_imgs
-        self.output_exp = output_exp
+
+        self.encoder = encoder
 
         conv_planes = [16, 32, 64, 128, 256, 256, 256]
         self.conv1 = conv(in_channels*(1+self.nb_ref_imgs), conv_planes[0], kernel_size=7)
@@ -34,6 +35,12 @@ class LFPoseNet(nn.Module):
                 xavier_uniform_(m.weight.data)
                 if m.bias is not None:
                     zeros_(m.bias)
+
+    def encode(self, formatted, unformatted):
+        return self.encoder(formatted, unformatted)
+    
+    def hasEncoder(self):
+        return self.encoder is not None
 
     def forward(self, target_image, ref_imgs):
         assert(len(ref_imgs) == self.nb_ref_imgs)
