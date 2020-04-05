@@ -157,6 +157,13 @@ def smooth_loss(pred_map):
     return loss
 
 
+def pose_loss(pose, pose_gt):
+    pred_pose_magnitude = pose[:, :, :3].norm(dim=2)
+    pose_gt_magnitude = pose_gt[:, :, :3].norm(dim=2)
+    error = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
+    return error
+
+
 @torch.no_grad()
 def compute_errors(gt, pred, crop=True):
     abs_diff, abs_rel, sq_rel, a1, a2, a3 = 0,0,0,0,0,0

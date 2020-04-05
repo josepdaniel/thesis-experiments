@@ -4,9 +4,10 @@ import custom_transforms
 import argparse
 import matplotlib.pyplot as plt
 import numpy as np
-from multiwarp_dataloader import getValidationFocalstackLoader, getValidationStackedLFLoader
+from multiwarp_dataloader import getValidationFocalstackLoader, getValidationStackedLFLoader, getValidationEpiLoader
 from lfmodels import LFDispNet as DispNetS
 from lfmodels import LFPoseNet as PoseNet
+from lfmodels import EpiEncoder
 from utils import load_config
 import sys
 
@@ -41,23 +42,37 @@ def main():
         custom_transforms.Normalize(mean=0.5, std=0.5)
     ])
 
+    disp_encoder=None
+
     if config.lfformat == 'focalstack':
         dataset = getValidationFocalstackLoader(config, args.seq, transform, shuffle=False)
         print("Loading images as focalstack")
     elif config.lfformat == 'stack':
         dataset = getValidationStackedLFLoader(config, args.seq, transform, shuffle=False)
         print("Loading images as stack")
+    elif config.lfformat == 'epi':
+        dataset = getValidationEpiLoader(config, args.seq, transform, shuffle=False)
+        print("Loading images as tiled EPIs")
 
-    input_channels = dataset[0]['tgt_lf_formatted'].shape[0]
+
+    dispnet_input_channels = posenet_input_channels = dataset[0]['tgt_lf_formatted'].shape[0]
     output_channels = len(config.cameras)
-    print(f"Using {input_channels} input channels, {output_channels} output channels")
 
-    disp_net = DispNetS(in_channels=input_channels, out_channels=output_channels).to(device)
+    if config.lfformat == 'epi':
+        disp_encoder = EpiEncoder('vertical', config.tilesize).to(device)
+        dispnet_input_channels = 16 + len(config.cameras)
+        print("Initialised disp encoder")
+
+    print(f"[DispNet] Using {dispnet_input_channels} input channels, {output_channels} output channels")
+    print(f"[PoseNet] Using {posenet_input_channels} input channels")
+
+
+    disp_net = DispNetS(in_channels=dispnet_input_channels, out_channels=output_channels, encoder=disp_encoder).to(device)
     weights = torch.load(config.dispnet)
     disp_net.load_state_dict(weights['state_dict'])
     disp_net.eval()
 
-    pose_net = PoseNet(in_channels=input_channels, nb_ref_imgs=2, output_exp=False).to(device)
+    pose_net = PoseNet(in_channels=posenet_input_channels, nb_ref_imgs=2, output_exp=False).to(device)
     weights = torch.load(config.posenet)
     pose_net.load_state_dict(weights['state_dict'])
     pose_net.eval()
@@ -66,11 +81,17 @@ def main():
 
     for i, validData in enumerate(dataset):
         print("{:03d}/{:03d}".format(i + 1, len(dataset)), end="\r")
-        tgt = validData['tgt_lf_formatted'].unsqueeze(0).to(device)
+        tgt_formatted = validData['tgt_lf_formatted'].unsqueeze(0).to(device)
+        tgt_unformatted = validData['tgt_lf'].unsqueeze(0).to(device)
         ref = [r.unsqueeze(0).to(device) for r in validData['ref_lfs_formatted']]
 
-        output = disp_net(tgt)
-        pose = pose_net(tgt, ref)
+        if disp_net.hasEncoder():
+            tgt_encoded = disp_net.encode(tgt_formatted, tgt_unformatted)
+        else:
+            tgt_encoded = tgt_formatted
+
+        output = disp_net(tgt_encoded)
+        pose = pose_net(tgt_formatted, ref)
 
         outdir = os.path.join(output_dir, "{:06d}.png".format(i))
         plt.imsave(outdir, output.cpu().numpy()[0, 0, :, :])

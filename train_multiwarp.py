@@ -113,7 +113,7 @@ def main():
 
     with open(save_path/args.log_full, 'w') as csvfile:
         writer = csv.writer(csvfile, delimiter='\t')
-        writer.writerow(['train_loss', 'photo_loss', 'explainability_loss', 'smooth_loss'])
+        writer.writerow(['train_loss', 'photo_loss', 'smooth_loss', 'pose_loss'])
 
     logger = TermLogger(n_epochs=args.epochs, train_size=min(len(train_loader), args.epoch_size), valid_size=len(val_loader))
     logger.epoch_bar.start()
@@ -144,10 +144,10 @@ def main():
         best_error = min(best_error, decisive_error)
         save_checkpoint(save_path, {
                 'epoch': epoch + 1,
-                'state_dict': disp_net.module.state_dict()
+                'state_dict': disp_net.state_dict()
             }, {
                 'epoch': epoch + 1,
-                'state_dict': pose_net.module.state_dict()
+                'state_dict': pose_net.state_dict()
             }, is_best)
 
         with open(save_path/args.log_summary, 'a') as csvfile:
@@ -198,14 +198,10 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
 
-        explainability_error = 0
         smoothness_error = smooth_loss(depth)
+        pose_error = pose_loss(pose, pose_gt)
 
-        pred_pose_magnitude = pose[:, :, :3].norm(dim=2)
-        pose_gt_magnitude = pose_gt[:, :, :3].norm(dim=2)
-        pose_error = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
-
-        loss = w1*photometric_error + w2*explainability_error + w3*smoothness_error + w4*pose_error
+        loss = w1*photometric_error + w3*smoothness_error + w4*pose_error
 
         if log_losses:
             tb_writer.add_scalar('train/photometric_error', photometric_error.item(), n_iter)
@@ -240,7 +236,7 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
 
         with open(args.save_path/args.log_full, 'a') as csvfile:
             writer = csv.writer(csvfile, delimiter='\t')
-            writer.writerow([loss.item(), photometric_error.item(), explainability_error.item() if w2 > 0 else 0, smoothness_error.item()])
+            writer.writerow([loss.item(), photometric_error.item(), smoothness_error.item(), pose_error.item()])
         logger.train_bar.update(i+1)
         if i % args.print_freq == 0:
             logger.train_writer.write('Train: Time {} Data {} Loss {}'.format(batch_time, data_time, losses))
@@ -259,8 +255,6 @@ def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_
     losses = AverageMeter(i=3, precision=4)
     log_outputs = sample_nb_to_log > 0
     w1, w2, w3, w4 = args.photo_loss_weight, args.mask_loss_weight, args.smooth_loss_weight, args.gt_pose_loss_weight
-    # poses = np.zeros(((len(val_loader)-1) * args.batch_size * (args.sequence_length-1),6))
-    # disp_values = np.zeros(((len(val_loader)-1) * args.batch_size * 3))
 
     # switch to evaluate mode
     disp_net.eval()
@@ -281,24 +275,19 @@ def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_
             tgt_lf_encoded = disp_net.encode(tgt_lf_formatted, tgt_lf)
         else:
             tgt_lf_encoded = tgt_lf_formatted
-        disp = disp_net(tgt_lf_encoded)
-
+        
         # compute output
-        # disp = disp_net(tgt_lf_formatted)
+        disp = disp_net(tgt_lf_encoded)
         depth = 1/disp
         pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
 
-        loss_1, warped, diff = multiwarp_photometric_loss(
+        photometric_error, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
 
-        loss_1 = loss_1.item()                      # Photometric loss
-        loss_2 = 0                                  # Explainability loss (deprecated)
-        loss_3 = smooth_loss(depth).item()          # Smoothness loss
-
-        pred_pose_magnitude = pose[:,:,:3].norm(dim=2)
-        pose_gt_magnitude = pose_gt[:,:,:3].norm(dim=2)
-        pose_loss = (pred_pose_magnitude - pose_gt_magnitude).abs().mean()
+        photometric_error = photometric_error.item()                      # Photometric loss
+        smoothness_error = smooth_loss(depth).item()                      # Smoothness loss
+        pose_error = pose_loss(pose, pose_gt).item()                      # Pose loss
 
         if log_outputs and i < sample_nb_to_log - 1:  # log first output of first batches
             b, n, h, w = tgt_lf_formatted.shape
@@ -310,8 +299,8 @@ def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_
             tb_writer.add_image('val/disp', vis_disp, n_iter)
             tb_writer.add_image('val/depth', vis_depth, n_iter)
 
-        loss = w1*loss_1 + w2*loss_2 + w3*loss_3 + w4*pose_loss
-        losses.update([loss, loss_1, loss_2])
+        loss = w1*photometric_error + w3*smoothness_error + w4*pose_error
+        losses.update([loss, photometric_error, pose_error])
 
         # measure elapsed time
         batch_time.update(time.time() - end)
@@ -321,7 +310,7 @@ def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_
             logger.valid_writer.write('valid: Time {} Loss {}'.format(batch_time, losses))
 
     logger.valid_bar.update(len(val_loader))
-    return losses.avg, ['val/total_loss', 'val/photometric_error', 'val/explainability_loss']
+    return losses.avg, ['val/total_loss', 'val/photometric_error', 'val/pose_error']
 
 
 if __name__ == '__main__':

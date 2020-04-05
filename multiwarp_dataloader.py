@@ -245,6 +245,19 @@ def getEpiLoaders(args, train_transform, valid_transform, shuffle=True):
 
     return train_set, val_set
 
+def getValidationEpiLoader(args, sequence=None, transform=None, shuffle=False):
+    return TiledEPILoader(
+        args.data,
+        cameras=args.cameras,
+        gray=True,
+        seed=args.seed,
+        train=False,
+        sequence_length=args.sequence_length,
+        transform=transform,
+        shuffle=shuffle,
+        sequence=sequence
+    )
+
 
 def getFocalstackLoaders(args, train_transform, valid_transform, shuffle=True):
     train_set = FocalstackLoader(
