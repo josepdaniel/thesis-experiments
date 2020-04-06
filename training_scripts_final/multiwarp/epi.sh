@@ -1,6 +1,6 @@
 python3 train_multiwarp.py epi \
 ~/Documents/thesis/epidata/module-1-1/module1-1-png \
-debug/multiwarp/epi/2test2 \
+final/multiwarp/epi/ \
 -c 2 4 6 8 \
 --save-path ~/Documents/thesis/checkpoints \
 --sequence-length 3 \

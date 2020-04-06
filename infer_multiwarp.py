@@ -7,7 +7,7 @@ import numpy as np
 from multiwarp_dataloader import getValidationFocalstackLoader, getValidationStackedLFLoader, getValidationEpiLoader
 from lfmodels import LFDispNet as DispNetS
 from lfmodels import LFPoseNet as PoseNet
-from lfmodels import EpiEncoder
+from lfmodels import EpiEncoder, RelativeEpiEncoder
 from utils import load_config
 import sys
 
@@ -43,6 +43,7 @@ def main():
     ])
 
     disp_encoder=None
+    pose_encoder=None
 
     if config.lfformat == 'focalstack':
         dataset = getValidationFocalstackLoader(config, args.seq, transform, shuffle=False)
@@ -60,8 +61,10 @@ def main():
 
     if config.lfformat == 'epi':
         disp_encoder = EpiEncoder('vertical', config.tilesize).to(device)
+        pose_encoder = RelativeEpiEncoder('vertical', config.tilesize).to(device)
+        posenet_input_channels = 16 + len(config.cameras)
         dispnet_input_channels = 16 + len(config.cameras)
-        print("Initialised disp encoder")
+        print("Initialised disp and pose encoders")
 
     print(f"[DispNet] Using {dispnet_input_channels} input channels, {output_channels} output channels")
     print(f"[PoseNet] Using {posenet_input_channels} input channels")
@@ -72,7 +75,7 @@ def main():
     disp_net.load_state_dict(weights['state_dict'])
     disp_net.eval()
 
-    pose_net = PoseNet(in_channels=posenet_input_channels, nb_ref_imgs=2, output_exp=False).to(device)
+    pose_net = PoseNet(in_channels=posenet_input_channels, nb_ref_imgs=2, encoder=pose_encoder).to(device)
     weights = torch.load(config.posenet)
     pose_net.load_state_dict(weights['state_dict'])
     pose_net.eval()
@@ -82,16 +85,23 @@ def main():
     for i, validData in enumerate(dataset):
         print("{:03d}/{:03d}".format(i + 1, len(dataset)), end="\r")
         tgt_formatted = validData['tgt_lf_formatted'].unsqueeze(0).to(device)
-        tgt_unformatted = validData['tgt_lf'].unsqueeze(0).to(device)
-        ref = [r.unsqueeze(0).to(device) for r in validData['ref_lfs_formatted']]
+        tgt = validData['tgt_lf'].unsqueeze(0).to(device)
+        ref_formatted = [r.unsqueeze(0).to(device) for r in validData['ref_lfs_formatted']]
+        ref = [r.unsqueeze(0).to(device) for r in validData['ref_lfs']]
 
         if disp_net.hasEncoder():
-            tgt_encoded = disp_net.encode(tgt_formatted, tgt_unformatted)
+            tgt_encoded_d = disp_net.encode(tgt_formatted, tgt)
         else:
-            tgt_encoded = tgt_formatted
+            tgt_encoded_d = tgt_formatted
 
-        output = disp_net(tgt_encoded)
-        pose = pose_net(tgt_formatted, ref)
+        if pose_net.hasEncoder():
+            tgt_encoded_p, ref_encoded_p = pose_net.encode(tgt_formatted, tgt, ref_formatted, ref)
+        else:
+            tgt_encoded_p = tgt_formatted
+            ref_encoded_p = ref_formatted
+
+        output = disp_net(tgt_encoded_d)
+        pose = pose_net(tgt_encoded_p, ref_encoded_p)
 
         outdir = os.path.join(output_dir, "{:06d}.png".format(i))
         plt.imsave(outdir, output.cpu().numpy()[0, 0, :, :])

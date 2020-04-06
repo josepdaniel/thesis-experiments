@@ -12,7 +12,7 @@ import custom_transforms
 import lfmodels as models
 
 from utils import tensor2array, save_checkpoint, make_save_path, log_output_tensorboard, dump_config
-from loss_functions import multiwarp_photometric_loss, explainability_loss, smooth_loss, compute_errors
+from loss_functions import multiwarp_photometric_loss, explainability_loss, smooth_loss, compute_errors, pose_loss
 from logger import TermLogger, AverageMeter
 from tensorboardX import SummaryWriter
 
@@ -68,12 +68,14 @@ def main():
     if args.lfformat == "epi":
         print("=> Using EPI encoders")
         disp_encoder = models.EpiEncoder('vertical', args.tilesize).to(device)
+        pose_encoder = models.RelativeEpiEncoder('vertical', args.tilesize).to(device)
         dispnet_input_channels = 16 + len(args.cameras)
+        posenet_input_channels = 16 + len(args.cameras)
     else:
         disp_encoder = None; pose_encoder = None
     
     disp_net = models.LFDispNet(in_channels=dispnet_input_channels, out_channels=output_channels, encoder=disp_encoder).to(device)
-    pose_net = models.LFPoseNet(in_channels=posenet_input_channels, nb_ref_imgs=args.sequence_length - 1).to(device)
+    pose_net = models.LFPoseNet(in_channels=posenet_input_channels, nb_ref_imgs=args.sequence_length - 1, encoder=pose_encoder).to(device)
 
     print("=> [DispNet] Using {} input channels, {} output channels".format(dispnet_input_channels, output_channels))
     print("=> [PoseNet] Using {} input channels".format(posenet_input_channels))
@@ -186,14 +188,20 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
 
         # compute output
         if disp_net.hasEncoder():
-            tgt_lf_encoded = disp_net.encode(tgt_lf_formatted, tgt_lf)
+            tgt_lf_encoded_d = disp_net.encode(tgt_lf_formatted, tgt_lf)
         else:
-            tgt_lf_encoded = tgt_lf_formatted
+            tgt_lf_encoded_d = tgt_lf_formatted
+
+        if pose_net.hasEncoder():
+            tgt_lf_encoded_p, ref_lfs_encoded_p = pose_net.encode(tgt_lf_formatted, tgt_lf, ref_lfs_formatted, ref_lfs)
+        else:
+            tgt_lf_encoded_p = tgt_lf_formatted 
+            ref_lfs_encoded_p = ref_lfs_formatted
         
-        disparities = disp_net(tgt_lf_encoded)
+        disparities = disp_net(tgt_lf_encoded_d)
         depth = [1/disp for disp in disparities]
 
-        pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
+        pose = pose_net(tgt_lf_encoded_p, ref_lfs_encoded_p)
         photometric_error, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode
         )
@@ -214,8 +222,8 @@ def train(args, train_loader, disp_net, pose_net, optimizer, epoch_size, logger,
             b, n, h, w = depth[0].shape
             vis_depth = tensor2array(depth[0][0, 0, :, :], colormap='magma')
             vis_disp = tensor2array(disparities[0][0, 0, :, :], colormap='magma')
-            vis_enc_f = tgt_lf_encoded[0, 0, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
-            vis_enc_b = tgt_lf_encoded[0, -1, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
+            vis_enc_f = tgt_lf_encoded_d[0, 0, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
+            vis_enc_b = tgt_lf_encoded_d[0, -1, :, :].detach().cpu().numpy().reshape(1, h, w) * 0.5 + 0.5
             tb_writer.add_image('train/input', vis_img, n_iter)
             tb_writer.add_image('train/encoded_front', vis_enc_f, n_iter)
             tb_writer.add_image('train/encoded_back', vis_enc_b, n_iter)
@@ -272,14 +280,20 @@ def validate_without_gt(args, val_loader, disp_net, pose_net, epoch, logger, tb_
         metadata = validdata['metadata']
 
         if disp_net.hasEncoder():
-            tgt_lf_encoded = disp_net.encode(tgt_lf_formatted, tgt_lf)
+            tgt_lf_encoded_d = disp_net.encode(tgt_lf_formatted, tgt_lf)
         else:
-            tgt_lf_encoded = tgt_lf_formatted
+            tgt_lf_encoded_d = tgt_lf_formatted
+
+        if pose_net.hasEncoder():
+            tgt_lf_encoded_p, ref_lfs_encoded_p = pose_net.encode(tgt_lf_formatted, tgt_lf, ref_lfs_formatted, ref_lfs)
+        else:
+            tgt_lf_encoded_p = tgt_lf_formatted 
+            ref_lfs_encoded_p = ref_lfs_formatted
         
         # compute output
-        disp = disp_net(tgt_lf_encoded)
+        disp = disp_net(tgt_lf_encoded_d)
         depth = 1/disp
-        pose = pose_net(tgt_lf_formatted, ref_lfs_formatted)
+        pose = pose_net(tgt_lf_encoded_p, ref_lfs_encoded_p)
 
         photometric_error, warped, diff = multiwarp_photometric_loss(
             tgt_lf, ref_lfs, intrinsics, depth, pose, metadata, args.rotation_mode, args.padding_mode

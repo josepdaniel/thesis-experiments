@@ -36,8 +36,8 @@ class LFPoseNet(nn.Module):
                 if m.bias is not None:
                     zeros_(m.bias)
 
-    def encode(self, formatted, unformatted):
-        return self.encoder(formatted, unformatted)
+    def encode(self, tgt_formatted, tgt_unformatted, ref_formatted, ref_unformatted):
+        return self.encoder(tgt_formatted, tgt_unformatted, ref_formatted, ref_unformatted)
     
     def hasEncoder(self):
         return self.encoder is not None
