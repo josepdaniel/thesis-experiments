@@ -1,6 +1,6 @@
 python3 train_multiwarp.py stack \
 ~/Documents/thesis/epidata/module-1-1/module1-1-png \
-final/multiwarp/stack/5 \
+final/multiwarp-5/stack \
 --save-path ~/Documents/thesis/checkpoints \
 -c 3 8 13 7 9 \
 --sequence-length 3 \

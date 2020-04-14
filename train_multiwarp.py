@@ -137,7 +137,7 @@ def main():
         for error, name in zip(errors, error_names):
             tb_writer.add_scalar(name, error, epoch)
 
-        decisive_error = errors[1]
+        decisive_error = errors[2]
         if best_error < 0:
             best_error = decisive_error
 
