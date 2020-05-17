@@ -8,6 +8,7 @@ from multiwarp_dataloader import getValidationFocalstackLoader, getValidationSta
 from lfmodels import LFDispNet as DispNetS
 from lfmodels import LFPoseNet as PoseNet
 from lfmodels import EpiEncoder, RelativeEpiEncoder
+from loss_functions import multiwarp_photometric_loss
 from utils import load_config
 import sys
 
@@ -36,6 +37,9 @@ def main():
         config.dispnet = os.path.join(config.save_path, "dispnet_best.pth.tar")
 
     os.makedirs(output_dir)
+    os.makedirs(output_dir + "/depth")
+    os.makedirs(output_dir + "/warps")
+    os.makedirs(output_dir + "/diffs")
 
     transform = custom_transforms.Compose([
         custom_transforms.ArrayToTensor(),
@@ -88,6 +92,9 @@ def main():
         tgt = validData['tgt_lf'].unsqueeze(0).to(device)
         ref_formatted = [r.unsqueeze(0).to(device) for r in validData['ref_lfs_formatted']]
         ref = [r.unsqueeze(0).to(device) for r in validData['ref_lfs']]
+        intrinsics = torch.Tensor(validData['intrinsics']).unsqueeze(0).to(device)
+        metadata = validData['metadata']
+        metadata['cameras'] = torch.tensor(metadata['cameras']).unsqueeze(1).to(device)
 
         if disp_net.hasEncoder():
             tgt_encoded_d = disp_net.encode(tgt_formatted, tgt)
@@ -103,9 +110,24 @@ def main():
         output = disp_net(tgt_encoded_d)
         pose = pose_net(tgt_encoded_p, ref_encoded_p)
 
+        # print(output.shape)
+        # print(pose.shape)
+        # print(tgt.shape)
+        # print(ref[0].shape)
+
+        pe, warped, diff = multiwarp_photometric_loss(
+            tgt, ref, intrinsics, output, pose, metadata, config.rotation_mode, config.padding_mode
+        )
+
         outdir = os.path.join(output_dir, "{:06d}.png".format(i))
+        plt.imsave(outdir, tgt.cpu().numpy()[0, 0, :, :], cmap='gray')
+        outdir = os.path.join(output_dir, "depth/{:06d}.png".format(i))
         plt.imsave(outdir, output.cpu().numpy()[0, 0, :, :])
-        poses.append(pose[0, 1, :].cpu().numpy())
+        outdir = os.path.join(output_dir, "warps/{:06d}.png".format(i))
+        plt.imsave(outdir, warped[0][0].cpu().numpy()[0, 0, :, :], cmap='gray')
+        outdir = os.path.join(output_dir, "diffs/{:06d}.png".format(i))
+        plt.imsave(outdir, diff[0][0].cpu().numpy()[0, 0, :, :])
+        poses.append(pose[0, 0, :].cpu().numpy())
 
     outdir = os.path.join(output_dir, "poses.npy")
     np.save(outdir, poses)
